@@ -1,45 +1,44 @@
 # Natural evolution of an ecosystem
-Ce projet python de plusieurs mois est une simulation de l'évolution naturelle permettant de voir emerger des comportements complexes. Les individus sont pilotés par des réseaux neuronaux artificiels et évoluent par mutations génétiques. Ils doivent apprendre à développer des stratégies individuelles et de groupe pour survivre dans cet environnement.
+This python project of several months is a simulation of natural evolution allowing to see complex behaviors emerge. Individuals are driven by artificial neural networks and evolve by genetic mutations. They must learn to develop individual and group strategies to survive in this environment.
 
 # Installation
-Il y a quelques librairies à installer pour que la simulation puisse se lancer, rien de très volumineux.
-- Installer les librairies Python
+There are a few libraries to install so that the simulation can start, nothing very large.
+- Install the Python libraries
 ```sh
 pip install -r requirements.txt
 ```
 
-# Configuration de l'algorithme
-Les paramètres utilisés pour lancer la simulation peuvent être modifiés dans le main du fichier `parameters_V23.py`. Ce fichier regrouppe tous les paramètres nécessaire à la simulation.
+# Algorithm configuration
+The parameters used to start the simulation can be modified in the main of the `parameters_V23.py` file. This file groups together all the parameters necessary for the simulation.
 
-Ce projet contients énormément de paramètres. Je ne liste ici que les plus importants qui, je pense, sont les premiers à modifier si des modifications doivent être faites :
+This project contains a lot of parameters. I only list here the most important ones which, I think, are the first to modify if modifications must be made:
 
-
-## Lancer une simulation
-Les paramètres se modifient dans `parameters_V23.py`. La simulation se lance en lancant `ecosystem_V23_huge_scale.py`.
-Le premier bloc de code avant "PARAMETRES" n'est pas à modifier pour lancer une simulation.
-Le "end_time" n'est pas à modifier tans que la ligne suivante ne remplace pas le while: 
+## Launch a simulation
+The parameters are modified in `parameters_V23.py`. The simulation is launched by launching `ecosystem_V23_huge_scale.py`.
+The first block of code before "PARAMETERS" does not need to be modified to launch a simulation.
+The "end_time" does not need to be modified as long as the following line does not replace the while:
 ```python
 #while temps <= duree_simulation and len(self.liste_individus) and time.time() < time.mktime(end_time)> 0:
 ```
-Ainsi, pour arreter la simulation,  
-Peuvent êtremodifiés sans risques :
-- faire Ctrl + C pour arreter le processus, l'évenement sera capturé et l'arret génerera l'historique et la video
-- spécifier le "duree_simulation" voulu
-- avoir la condition "time.time() < time.mktime(end_time)> 0" dans le while et spécifier la bonne date.
+Thus, to stop the simulation,
+Can be modified without risk:
+- do Ctrl + C to stop the process, the event will be captured and the stop will generate the history and the video
+- specify the desired "duration_simulation"
+- have the condition "time.time() < time.mktime(end_time)> 0" in the while and specify the correct date.
 
 ```python
-taille_carte = 1200 #spécifie la taille de la carte. Les individus font à l'origine 2 unités de long
+taille_carte = 1200 #specifies the size of the map. Individuals are originally 2 units long
 
-nbr_individus_init = 100 #spécifie le nombre d'individu au lancement de la simulation
+nbr_individus_init = 100 #specifies the number of individuals when launching the simulation
 
-nbr_plantes_init = 120*size_modification #Ne modifier que la valeur numérique du nombre (ici 120). Spécifie le nombre de plantes au lancement de la simulation
-nbr_min_plant_init = 5*size_modification #Ne modifier que la valeur numérique du nombre (ici 5). Spécifie le nombre de plantes minimum avant replante de graine à un endroit aléatoire de la simulation
+nbr_plantes_init = 120*size_modification #Only change the numeric value of the number (here 120). Specifies the number of plants when launching the simulation
+nbr_min_plant_init = 5*size_modification #Only change the numeric value of the number (here 5). Specifies the minimum number of plants before replanting seeds at a random location in the simulation
 
 
-lvl_max_eat_scale = 4 #Spécifie le nombre de diet différentes dans la simulation. Par exemple, 1 veut dire qu'il y a que des individus omnivores, 2 qu'il y a des carnivores et des herbivores ...
+lvl_max_eat_scale = 4 #Specifies the number of different diets in the simulation. For example, 1 means that there are only omnivores, 2 that there are carnivores and herbivores...
 
-# Pour les suivants, il est possible d'enlever un élément d'un des dictionnaires "liste_entrees_supplementaires_possibles_init", "liste_entrees_supplementaires_possibles_par_part_init" ou "liste_sorties_supplementaires_possibles_init" et de l'ajouter dans le dictionnaire correspondant "init". Attention, il faut bien enlever la clés et la valeur et les mettre tels quels dans le dictionnaire init correspondant. Ca permet d'ajouter des features initiales aux individus.
-liste_entrees_supplementaires_init = {} #doit etre complementaire a liste_entrees_supplementaires_possibles_init
+# For the following, it is possible to remove an element from one of the dictionaries "liste_entrees_supplementaires_possibles_init", "liste_entrees_supplementaires_possibles_par_part_init" or "liste_sorties_supplementaires_possibles_init" and add it to the corresponding dictionary "init". Be careful, you must remove the key and the value and put them as is in the corresponding init dictionary. This allows you to add initial features to individuals.
+liste_entrees_supplementaires_init = {} #must be complementary to list_of_additional_possible_entries_init
 liste_entrees_supplementaires_par_part_init = {}
 liste_sorties_supplementaires_init = {}
 liste_entrees_supplementaires_possibles_init = {"energie" : 1, "regime" : 1, "is_giving_birth" : 1, "is_stomach_full" : 1, "oreille" : 3, "vie" : 1}
@@ -47,20 +46,19 @@ liste_entrees_supplementaires_possibles_par_part_init = {"know_size" : 1, "know_
 liste_sorties_supplementaires_possibles_init = {"attaque" : 1, "trophallaxy" : 1, "bouche" : 2, "creer_bb" : 1}
 
 ```
+## View the results
+In the Videos folder will be the video(s) and the graph from the simulation.
 
-## Visualiser les résultats
-Dans le dossier Videos se trouvera la/les videos et le graphique issu de la simulation. 
-Dans le dossier "Current Working code / data" se trouvera l'historique des individus issu de la simulation.
+In the "Current Working code / data" folder will be the history of the individuals from the simulation.
 
-Il est possible d'afficher le cerveau et caractéristique d'un individu via son ID.
-Pour ce faire, il faut : 
-- noter son ID via la video
-- inscrire le chemin de la video dans "fichier_path" au début du fichier  `parameters_V23.py`
-- inscrire l'ID de l'individu dans "characteristics_ID_individu"
-- relancer la simulation.
-A ce moment là une image et des infomations consoles apparaitront. 
+It is possible to display the brain and characteristics of an individual via its ID.
+To do this, you must:
+- note its ID via the video
+- enter the path of the video in "fichier_path" at the beginning of the `parameters_V23.py` file
+- enter the ID of the individual in "characteristics_ID_individu"
+- restart the simulation.
+At this point an image and console information will appear.
 
-A noter : la simulation se relance à chaque echec si "start_again_until_alive_pop" est "True". 
-Alors, une video et un historique est sauvegardé en copue dans le dossier Videos et data respectivement si la simulation dépasse "time_to_save_video" itérations.
-
+Note: the simulation restarts at each failure if "start_again_until_alive_pop" is "True".
+So, a video and a history are saved in copy in the Videos and data folder respectively if the simulation exceeds "time_to_save_video" iterations.
 
