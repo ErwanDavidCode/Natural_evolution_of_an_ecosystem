@@ -7,30 +7,54 @@ import functions_V23 as functions
 
 
 
-def vision_normalizer(size_individual, my_size):
-    """Normalise entre [-1, 1] la vision en fonction de la taille de l'individu
-    La normalisation de la taille de l'individu dépend de ma taille : elle varie beaucoup si la cible est d'une taille similaire à la mienne"""
-    return np.arctan(size_individual - my_size) / (np.pi / 2)
+import math
 
-
-def diet_normalizer(diet_individual, my_diet):
+def vision_normalizer(size_individual: float, my_size: float):
     """
-    Normalise entre [-1, 1] la différence de régime alimentaire (diet) entre deux individus.
-    La normalisation est basée sur l'échelle maximale de régime alimentaire.
+    Normalise dans [-1, 1] la taille de l'individu vu, RELATIVEMENT à ma taille (ratio).
     
-    :param diet_individual: Le régime de l'individu cible (entier entre 0 et lvl_max_eat_scale).
-    :param my_diet: Mon propre régime alimentaire (entier entre 0 et lvl_max_eat_scale).
-    :param lvl_max_eat_scale: La valeur maximale sur l'échelle de régime.
-    :return: Valeur normalisée entre [-1, 1] indiquant la similarité des régimes alimentaires.
+    Objectif (symétrique en facteur x2 / ÷2) :
+    - si size_individual = 0.5 * my_size  => sortie ≈ +0.95 (beaucoup plus petit)
+    - si size_individual = 2.0 * my_size  => sortie ≈ -0.95 (beaucoup plus grand)
+    - si size_individual = 1.0 * my_size  => sortie = 0 (même taille)
     """
-    # if it is not an individual, so has no diet
-    if diet_individual == None:
-        return -1
-    # Calcul de la différence normalisée entre -1 et 1
-    difference = diet_individual - my_diet
-    normalized_difference = difference / lvl_max_eat_scale if lvl_max_eat_scale != 0 else 0
-    # Appliquer arctan pour lisser les valeurs et normaliser entre -1 et 1
-    return np.arctan(normalized_difference) / (np.pi / 2)
+    # atanh(0.95) ≈ 1.83178  -> tanh(1.83178) = 0.95
+    _ATANH_SAT_095 = 1.831780823
+
+    # Ratio r = (sa taille) / (ma taille)
+    # r=0.5 => 2x plus petit ; r=2 => 2x plus grand
+    r = size_individual / (my_size + 1e-9)
+
+    # On construit x dans [-1,1] tel que :
+    # - r=0.5 -> x=+1
+    # - r=1   -> x=0
+    # - r=2   -> x=-1
+    if r >= 1.0:
+        x = -(r - 1.0)      # r=2 -> -1
+    else:
+        x = (1.0 / r) - 1.0 # r=0.5 -> +1
+
+    return math.tanh(_ATANH_SAT_095 * x)
+
+
+
+def energy_normalizer(energy_entity, my_max_energy):
+    """Normalise entre [0, 1] l'energy en fonction de la taille de l'entité car l'energy est toujours positive.
+    La normalisation de l'energy sature quand l'entité à plus d'energy que mon max"""
+    # atanh(0.95) ≈ 1.83178  -> tanh(1.83178) = 0.95
+    _ATANH_SAT_095 = 1.83
+    # sature ~0.95 quand energy_entity == my_energy
+    k = _ATANH_SAT_095 / (my_max_energy + 1e-9)
+    return math.tanh(k * energy_entity)
+
+
+def diet_normalizer(diet_target, my_diet):
+    """Normalise entre [-1, 1] la diet.
+    La normalisation de la diet est linéaire et vaut 1 si suis carnivore et que l'inf est herbivore et -1 reciproquement"""
+    if diet_target is None or lvl_max_eat_scale == 0:
+        return 0
+    return (my_diet - diet_target) / lvl_max_eat_scale
+
 
 
 def move_energy(x):
@@ -76,6 +100,7 @@ class Body:
 
         self.know_size = False
         self.know_diet = False
+        self.know_energy = False
 
         #initialize
         self.generation = 0 #to modify if is a child
@@ -100,6 +125,9 @@ class Body:
         self.is_losing_life = False
         self.old_facteur_multiplicatif_deplacement = self.facteur_multiplicatif_deplacement
         self.nbr_bb = 0
+        self.compteur_injured = 0
+        self.seed_bank = 0
+
         
         self.reset_bruit_entendu() #Normalisation entre -1 et +1 tanh.  liste des bruits entendus. Sert pour l'audio et pour les valeurs par défauts si on entend rien
         self.reset_bruit_emis() #sert pour le bruit emis par défaut (0 si on emet pas de bruit comme ca 'depreciate_distance_sound' renvoit 0 et il n'y a donc pas de max
@@ -430,12 +458,17 @@ class Body:
         #perte energie rotation
         self.energie -= np.abs(teta * facteur_multiplicatif_perte_vie/10)
         
-        #radian car en argument d'une fonction trigo
-        nouvel_angle = self.teta * np.pi/180
-        
         #deplacement et velocité
-        velocite = sortie_brain[0]
-        deplacement = velocite*pas_de_temps*self.facteur_multiplicatif_deplacement
+        # ralentissement si tappé
+        if self.compteur_injured > 0:
+            ralentissement = facteur_slowed_down
+        else:
+            ralentissement = 1 # no ralentissement
+        # speed and angle
+        velocite = sortie_brain[0]*self.facteur_multiplicatif_deplacement*ralentissement
+        deplacement = velocite*pas_de_temps
+        #radian car en argument d'une fonction trigo
+        nouvel_angle = self.teta * np.pi/180 * ralentissement
         deplacement_x = deplacement*np.cos(nouvel_angle)
         deplacement_y = deplacement*np.sin(nouvel_angle)
 
@@ -465,13 +498,14 @@ class Body:
             index_sortie_brain += nbr_neurones_correspondant
 
             # Prendre une décision en fonction de la sortie et de ses valeurs
-            if neurone == "attaque" and valeurs_sortie_brain > seuil_attaque and self.age > age_min_to_attack and self.energie > 0:
-                self.attack(ecosystem_obj, valeurs_sortie_brain, list_reachable_entity)
-            elif neurone == "trophallaxy" and valeurs_sortie_brain > seuil_trophallaxie and self.energie > 0:
-                self.share_ressources(ecosystem_obj, valeurs_sortie_brain)
-            elif neurone == "bouche" and valeurs_sortie_brain[1] > seuil_bruit: #valeurs_sortie_brain[0] = freq        &&          valeurs_sortie_brain[1] = intensité
+            value = float(valeurs_sortie_brain[0])
+            if neurone == "attaque" and value > seuil_attaque and self.age > age_min_to_attack and self.energie > 0:
+                self.attack(ecosystem_obj, value, list_reachable_entity)
+            elif neurone == "trophallaxy" and value > seuil_trophallaxie and self.energie > 0:
+                self.share_ressources(ecosystem_obj, value)
+            elif neurone == "bouche" and float(valeurs_sortie_brain[1]) > seuil_bruit: #valeurs_sortie_brain[0] = freq        &&          valeurs_sortie_brain[1] = intensité
                 self.make_noise(valeurs_sortie_brain)
-            elif neurone == "creer_bb" and valeurs_sortie_brain > seuil_creer_bb: 
+            elif neurone == "creer_bb" and value > seuil_creer_bb: 
                 if self.age > age_min_to_childbirth and self.energie >= facteur_energie_creer_bb*self.max_energie_individu and len(ecosystem_obj.liste_individus) < max_individu and not simulation_seul_param and not self.bb_being_created:
                     #lance le processus pour creer un bébé si il peut (il faut un certain age et energie pour procréer et il ne doit pas y avoir trop d'individus)
                     self.bb_being_created = True
@@ -489,7 +523,7 @@ class Body:
         """Fait du bruit : on indique a travers notre attribut bruit_emis, qu'on fait du bruit"""
         self.make_noise_bool = True
         # Get the intensity and frequency of the sound
-        frequence, intensite = valeurs_sortie_brain[0], valeurs_sortie_brain[1]
+        frequence, intensite = float(valeurs_sortie_brain[0]), float(valeurs_sortie_brain[1])
         self.bruit_emis = [frequence, intensite]
 
 
@@ -521,12 +555,13 @@ class Body:
     def ear(self, depreciate_sound, depreciate_distance, frequence, angle_bruit):
         """Ecoute le bruit"""
         intensity_x, intensity_y = self.trigo_ear(depreciate_distance, angle_bruit) 
-        self.liste_bruit_entendu = [frequence, intensity_x, intensity_y, depreciate_sound]
+        frequence_normalized = 0.5 * (frequence + 1) #[-1,1] to [0,1]
+        self.liste_bruit_entendu = [frequence_normalized, intensity_x, intensity_y, depreciate_sound]
 
 
     def reset_bruit_entendu(self):
         """Reset le bruit entendu si aucun nouveau bruit n'est entendu"""
-        self.liste_bruit_entendu = [-1, -1, -1, -1]
+        self.liste_bruit_entendu = [0, 0, 0, 0]
 
 
     def get_bruit_entendu(self):
@@ -539,7 +574,8 @@ class Body:
         
         # Initialisation de la vision
         nbr_entrees = self.vision_nbr_parts*self.nbr_neurones_par_part + self.nbr_neurones_entrees_supplementaires
-        vision = - np.ones(nbr_entrees) # Vaut -1 par défaut (normalisation entre -1 et +1) +neurones_supplementaires pour ma classe par exemple
+        #vision = - np.ones(nbr_entrees) # Vaut -1 par défaut (normalisation entre -1 et +1) +neurones_supplementaires pour ma classe par exemple
+        vision = np.zeros(nbr_entrees) # Vaut 0 par défaut (normalisation entre 0 et +1) +neurones_supplementaires pour ma classe par exemple
         
         # Initialisation des distances minimales
         min_distances = np.full(self.vision_nbr_parts, np.inf)
@@ -554,16 +590,17 @@ class Body:
 
             # Initialiser les valeurs de vision correspondantes
             if neurone == "age":
-                vision[index_vision] = 2 * self.age / age_maximum - 1  # normalisation entre [-1, 1] tanh
+                #vision[index_vision] = 2 * self.age / age_maximum - 1  # normalisation entre [-1, 1] tanh
+                vision[index_vision] = self.age / age_maximum  # normalisation entre [0, 1] tanh
             elif neurone == "vie":
-                vision[index_vision] = 2 * self.vie / self.max_vie_individu - 1  # normalisation entre [-1, 1] tanh
+                vision[index_vision] = self.vie / self.max_vie_individu  # normalisation entre [0, 1] tanh
             elif neurone == "energie":
-                vision[index_vision] = 2 * self.energie / self.max_energie_individu - 1  # normalisation entre [-1, 1] tanh
-            elif neurone == "regime":
-                if lvl_max_eat_scale == 0:
-                    vision[index_vision] = 0  # Valeur neutre car il n'y a qu'un seul régime
-                else:
-                    vision[index_vision] = 2 * self.regime / lvl_max_eat_scale - 1
+                vision[index_vision] = self.energie / self.max_energie_individu  # normalisation entre [0, 1] tanh
+            # elif neurone == "regime":
+            #     if lvl_max_eat_scale == 0:
+            #         vision[index_vision] = 0  # Valeur neutre car il n'y a qu'un seul régime
+            #     else:
+            #         vision[index_vision] = self.regime / lvl_max_eat_scale # normalisation entre [0, 1] tanh
             elif neurone == "oreille":
                 spec_max_bruit = None  # Initialisation de la liste de bruit max
                 max_depreciate_sound = 0 # Initialisation du max, si aucun bruit emis, on a freq, intensité = 0,0 par défaut
@@ -579,18 +616,19 @@ class Body:
                 if spec_max_bruit:
                     depreciate_sound, depreciate_distance, frequence, angle = spec_max_bruit
                     self.ear(depreciate_sound, depreciate_distance, frequence, angle)
-                for i in range(nbr_neurones_correspondant):
-                    vision[index_vision + 0] = self.liste_bruit_entendu[0] #frequence
-                    vision[index_vision + 1] = self.liste_bruit_entendu[1] #intensité axe vision
-                    vision[index_vision + 2] = self.liste_bruit_entendu[2] #intensité gauche axe vision
+                else:
+                    self.reset_bruit_entendu()  # => 0,0,0,0
+                # write safely (assuming oreille=3 neurones)
+                vision[index_vision + 0] = self.liste_bruit_entendu[0] #frequence
+                vision[index_vision + 1] = self.liste_bruit_entendu[1] #intensité axe vision
+                vision[index_vision + 2] = self.liste_bruit_entendu[2] #intensité gauche axe vision
             elif neurone == "is_giving_birth":
-                vision[index_vision] = 1 if self.bb_being_created else -1  # normalisation entre [-1 = FAUX, 1 = TRUE] tanh
-            elif neurone == "is_stomach_full":
-                vision[index_vision] = 1 if self.energie >= self.max_energie_individu * facteur_energie_eat else -1 # normalisation entre [-1 = FAUX, 1 = TRUE] tanh
+                vision[index_vision] = 1 if self.bb_being_created else 0  # normalisation entre [0 = FAUX, 1 = TRUE] tanh
+            # elif neurone == "is_stomach_full":
+            #     vision[index_vision] = 1 if self.energie >= self.max_energie_individu * facteur_energie_eat else 0 # normalisation entre [0 = FAUX, 1 = TRUE] tanh
 
             # Incrémenter l'index pour les prochaines entrées
             index_vision += nbr_neurones_correspondant
-
 
 
         # get the visible entities
@@ -601,27 +639,38 @@ class Body:
             if part_index != -1 and distance < min_distances[part_index]:
                 entity_type = entity[1]
                 min_distances[part_index] = distance
+
                 # Distance normalisée pour la vision
-                dist_value = 2*(self.vision_rayon - distance)/self.vision_rayon - 1 # Normalisation dans [-1, 1] : part lin fontion tanh
-                #dist_value = 4*(self.vision_rayon - distance)/self.vision_rayon - 2 # Normalisation dans [-2, 2] : part lin fontion tanh  -----------------  FONCTION ACTIVATION
-                vision[self.nbr_neurones_entrees_supplementaires + part_index * self.nbr_neurones_par_part] = dist_value
-                # taille_value = vision_normalizer(entity[0].body.r_collision_box_individu if entity_type == "individual" else entity[0].r_hit_box_eatable, self.r_collision_box_individu) #vision_normalizer se décale en fonction de ma taille (toujours 0 pour un indvidu de ma taille et négatif pour les plus petits et positif pour les plus grands)
-                # vision[self.nbr_neurones_entrees_supplementaires + part_index * nbr_neurones_par_part + 1] = taille_value
+                #dist_value = 2*(self.vision_rayon - distance)/self.vision_rayon - 1 # Normalisation dans [-1, 1] : part lin fontion tanh
+                dist_value = (self.vision_rayon - distance)/self.vision_rayon  # Normalisation dans [0, 1]
+                base_index = self.nbr_neurones_entrees_supplementaires + part_index * self.nbr_neurones_par_part
+                vision[base_index] = dist_value
                 # Binary encoding of the entity classe
-                entity_classe = classes[entity_type]
-                binary_encoding = functions.classe_to_binary(entity_classe, nbr_classes)
-                for i, bit in enumerate(binary_encoding):
-                    vision[self.nbr_neurones_entrees_supplementaires + part_index * self.nbr_neurones_par_part + i + 1] = bit
+                # entity_classe = classes[entity_type]
+                # binary_encoding = functions.classe_to_binary(entity_classe, nbr_classes)
+                # for i, bit in enumerate(binary_encoding):
+                #     vision[self.nbr_neurones_entrees_supplementaires + part_index * self.nbr_neurones_par_part + i + 1] = bit 
+                
+                # Type en coins du carré (2 neurones), rien = (0,0)
+                tx, ty = functions.entity_type_to_square2(entity_type)
+                vision[base_index + 1] = tx # 1 et 2 fixe car on a que 2 neurones pour indiquer le type d'entité aujourd'hui
+                vision[base_index + 2] = ty
+
+
                 # If it has additional input to describe the entitie it sees
                 if self.liste_entrees_supplementaires_par_part:
+                    offset = 3  # après distance(1) + type(2)
                     index_vision = 0
                     for neurone, nbr_neurones_correspondant in self.liste_entrees_supplementaires_par_part.items():
                         if neurone == "know_size":
                             taille_value = vision_normalizer(entity[0].body.r_collision_box_individu if entity_type == "individual" else entity[0].r_hit_box_eatable, self.r_collision_box_individu) #vision_normalizer se décale en fonction de ma taille (toujours 0 pour un indvidu de ma taille et négatif pour les plus petits et positif pour les plus grands)
-                            vision[self.nbr_neurones_entrees_supplementaires + part_index * self.nbr_neurones_par_part + i + 1 + index_vision] = taille_value
+                            vision[base_index + offset + index_vision] = taille_value
+                        elif neurone == "know_energy":
+                            energie_value = energy_normalizer(entity[0].body.energie if entity_type == "individual" else entity[0].energy, self.max_energie_individu) #vision_normalizer se décale en fonction de ma taille (toujours 0 pour un indvidu de ma taille et négatif pour les plus petits et positif pour les plus grands)
+                            vision[base_index + offset + index_vision] = energie_value
                         elif neurone == "know_diet":
                             diet_value = diet_normalizer(entity[0].body.regime if entity_type == "individual" else None, self.regime)
-                            vision[self.nbr_neurones_entrees_supplementaires + part_index * self.nbr_neurones_par_part + i + 1 + index_vision] = diet_value
+                            vision[base_index + offset + index_vision] = diet_value
                         
                         index_vision += nbr_neurones_correspondant
 
@@ -650,13 +699,14 @@ class Body:
 
     def attack(self, ecosystem_obj, valeur_sortie_brain, list_reachable_entity):
         """Attaquer un individu dans la hit box de l'attaquant et vu par l'attaquant
-        IN : "list_reachable_entity" is a list of individuals in range"""
+        IN : "list_reachable_entity" is a list of individuals in range
+        valeur_sortie_brain is a float"""
         self.attack_bool = True
 
         # Initialisation
         teta = self.teta
         closest_entity = None
-        min_angle_diff = float('inf')
+        min_distance = float('inf')
 
         # Fonction pour calculer la différence d'angle minimale
         def angle_diff(angle1, angle2):
@@ -676,9 +726,10 @@ class Body:
             # Vérifier si l'entité est visible dans la partie de vision
             if part_index != -1:
                 # Calculer la différence d'angle par rapport au centre de la vision
-                angle_diff_value = angle_diff(teta, angle)
-                if angle_diff_value < min_angle_diff:
-                    min_angle_diff = angle_diff_value
+                #angle_diff_value = angle_diff(teta, angle)
+                # on attaque le plus proche dans le champs de vision
+                if distance < min_distance:
+                    min_distance = distance
                     closest_entity = entity
 
         # Si une entité cible a été trouvée, appliquer les dégâts
@@ -690,11 +741,14 @@ class Body:
             closest_entity[0].body.vie -= damage #plus l'attaqué est gros plus il a de vie
             # For the visualisation
             closest_entity[0].body.is_losing_life = True
+            # Slowing down because injured
+            closest_entity[0].body.compteur_injured = compteur_injured
 
             if closest_entity[0].body.vie <= 0 and not was_dead:
                 closest_entity_body = closest_entity[0].body
                 # lay meat on the ground when die*
-                ecosystem_obj.add_eatable("meat", energy=closest_entity_body.energie, size=closest_entity_body.r_collision_box_individu, position=(closest_entity[0].body.position[0], closest_entity[0].body.position[1])) #mangeable en fonction de la diet
+                energy = max(0, closest_entity_body.energie)
+                ecosystem_obj.add_eatable("meat", energy=energy, position=(closest_entity[0].body.position[0], closest_entity[0].body.position[1])) #mangeable en fonction de la diet
                 self.compteur_kill += 1
 
         self.energie -= max_energie_depensee_attack * valeur_sortie_brain # Coût de l'attaque
@@ -706,12 +760,19 @@ class Body:
         max_energy_output = valeurs_sortie_brain * self.max_energie_individu
         # Déterminer la quantité d'énergie que l'individu peut réellement cracher
         energy = min(self.energie, max_energy_output)
+
+        #critic case if energy negative
+        if energy <= 0:
+            return
         # Calculer la taille de l'objet en fonction de l'énergie disponible
-        size_trophallaxie = self.r_collision_box_individu * energy / self.max_energie_individu
+        #size_trophallaxie = self.r_collision_box_individu * energy / self.max_energie_individu
 
         # Soustraire l'énergie utilisée pour cracher l'objet de l'énergie disponible de l'individu
         self.energie -= energy
-        x_drop, y_drop = self.position[0] - (2 + size_trophallaxie + self.r_collision_box_individu + np.ceil(pas_de_temps*1*self.facteur_multiplicatif_deplacement)) * np.cos(np.deg2rad(self.teta)), self.position[1] - (2 + size_trophallaxie + self.r_collision_box_individu + np.ceil(pas_de_temps*1*self.facteur_multiplicatif_deplacement)) * np.sin(np.deg2rad(self.teta))
-        ecosystem_obj.add_eatable("trophallaxy", energy=energy, size=size_trophallaxie, position=(x_drop, y_drop)) #mangeable par tout le monde
+        #x_drop, y_drop = self.position[0] - (2 + r_hit_box_eatable_init + self.r_collision_box_individu + np.ceil(pas_de_temps*1*self.facteur_multiplicatif_deplacement)) * np.cos(np.deg2rad(self.teta)), self.position[1] - (2 + r_hit_box_eatable_init + self.r_collision_box_individu + np.ceil(pas_de_temps*1*self.facteur_multiplicatif_deplacement)) * np.sin(np.deg2rad(self.teta))
+        x_drop = self.position[0] - (2 + r_hit_box_eatable_init + self.r_eat_box_individu) * math.cos(self.teta)
+        y_drop = self.position[1] - (2 + r_hit_box_eatable_init + self.r_eat_box_individu) * math.sin(self.teta)
+
+        ecosystem_obj.add_eatable("trophallaxy", energy=energy, position=(x_drop, y_drop)) #mangeable par tout le monde
         self.compteur_trophallaxie += 1
 

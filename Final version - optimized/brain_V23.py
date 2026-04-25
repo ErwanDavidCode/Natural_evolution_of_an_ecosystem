@@ -582,6 +582,7 @@ class Brain:
     def mutate_alpha_proba(self):
         """Mutate alpha itself. The goal is for some individuals to be more adaptable than others"""
         self.alpha *= 1 + (random.uniform(-beta, beta)) #should vary slowly
+        self.alpha = max(1e-3, min(0.99, self.alpha)) #alpha between 1e-3 and 0.99
 
 
     def mutate_alpha(self):

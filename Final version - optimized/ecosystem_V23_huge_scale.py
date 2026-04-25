@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pydub import AudioSegment
 from pydub.generators import Sine
 import moviepy.editor as mp
+import math
 
 from parameters_V23 import *
 import brain_V23 as brain
@@ -53,12 +54,26 @@ class Ecosystem:
         self.quadtree = Index(bbox=(0, 0, taille_carte, taille_carte)) #création du quadtree
         self.compteur_mort = 0
         self.compteur_trophallaxie = 0
+        self.seed_collected_zoochorie = 0
+        self.seed_droped_zoochorie = 0
         
         self.nbr_min_plant = nbr_min_plant_init
 
         self.historique_path = "./data/historique_individus" #path pour l'historique des individus par défaut
 
-        self.taille_video = taille_carte
+        #self.taille_video = taille_carte
+        self.video_scale = video_scale
+        self.taille_video = int(taille_carte / self.video_scale)
+
+        self.font = ImageFont.truetype("./Roboto/Roboto-Regular.ttf", max(int(13/(size_modification*self.video_scale)),5)) #font = ImageFont.load_default() #police par défaut et taille non réglable par défaut
+        
+        self.rr_start = 0 #round-robin start index to avoid always starting with the same individuals between shuffles (if shuffle is not done every turn)
+
+        # necessary for the swap and pop in O(1)
+        self.idx_eatable = {}
+        self.idx_plantes = {}
+        self.idx_perishables = {}
+
         # Creation of video and history
         if liste_ID_alone_simulation == []: #if traditionnal simulation with all new individuals
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -99,6 +114,13 @@ class Ecosystem:
         #création des eatables
         self.liste_eatable = [] #liste qui rescence les eatables actuellement en vie
         self.liste_plantes = [] #liste qui rescence uniquement les plantes. BUT optimiser le calcul de la mort des plantes
+        self.liste_perishables = [] 
+        self.idx_eatable.clear()
+        self.idx_plantes.clear()
+        self.idx_perishables.clear()
+        # si idx_individus existe déjà
+        if hasattr(self, "idx_individus"):
+            self.idx_individus.clear()
 
         for plante in range(nbr_plantes_init):
             self.add_eatable("plant") 
@@ -107,20 +129,31 @@ class Ecosystem:
         self.generate_individu_init(liste_individus_selectionnes, matrice_poids = matrice_poids, biais_neurones = biais_neurones)
     
 
-    def add_eatable(self, eatable_type, energy=None, size=None, eatable_parent=None, position=None):
+    def add_eatable(self, eatable_type, energy=None, eatable_parent=None, position=None, age=None):
         """Ajoute une plante. eatable_parent: pour faire apparaitre a coté du parent. position: pour faire apparaitre à une position donnée. classe: pour faire apparaitre une plante d'une classe donnée"""
-        if eatable_parent is None and position is None: #spawn aléatoire proche d'une autre plante
+        if eatable_parent is None and position is None: #spawn aléatoire
             # Spawn aléatoire si x et y sont None
-            eatable_parent_position = random.choice(self.liste_plantes)[0].position if self.liste_plantes else [taille_carte/2, taille_carte/5] #on prend une plante au hasard
+            #eatable_parent_position = random.choice(self.liste_plantes)[0].position if self.liste_plantes else [taille_carte/2, taille_carte/5] #on prend une plante au hasard
             eatable_to_add = eatable.Eatable()
-            a = random.uniform(max(0, eatable_parent_position[0] - 1000), min(taille_carte, eatable_parent_position[0] + 1000))
-            b = random.uniform(max(0, eatable_parent_position[1] - 1000), min(taille_carte, eatable_parent_position[1] + 1000))
+            a = random.uniform(1, taille_carte-2)
+            b = random.uniform(1, taille_carte-2)
             eatable_to_add.position = [a, b]
             
-            self.liste_eatable.append([eatable_to_add, str(eatable_type)])
+            # ajouter energy parent : if wind 
+            if energy is not None:
+                eatable_to_add.energy = energy
+            if age is not None:
+                eatable_to_add.age = age
+
+            # swap and pop
+            entry = (eatable_to_add, eatable_type)  # eatable_type est déjà une string chez toi
+            functions.sp_add(self.liste_eatable, self.idx_eatable, entry)
+            if eatable_type in ("meat", "trophallaxy"):
+                functions.sp_add(self.liste_perishables, self.idx_perishables, entry)
+
             # Ajout des plantes au quadtree
             bbox = (a - eatable_to_add.r_hit_box_eatable, b - eatable_to_add.r_hit_box_eatable, a + eatable_to_add.r_hit_box_eatable, b + eatable_to_add.r_hit_box_eatable)  # bbox définie comme un point car c'est son centre qui nous intéresse
-            self.quadtree.insert(item=[eatable_to_add, eatable_type], bbox=bbox)
+            self.quadtree.insert(item=entry, bbox=bbox)
 
         elif position is None: #spawn proche de eatable_parent (si plante fait bb par exemple)
             #spawn proche de plante_parent
@@ -136,37 +169,63 @@ class Ecosystem:
             b = random.uniform(max(0, eatable_parent.position[1] - range_max_spawn_plant), min(taille_carte, eatable_parent.position[1] + range_max_spawn_plant))
             eatable_to_add.position = [a, b]
             
-            self.liste_eatable.append([eatable_to_add, str(eatable_type)])
+            # swap and pop
+            entry = (eatable_to_add, eatable_type)  # eatable_type est déjà une string chez toi
+            functions.sp_add(self.liste_eatable, self.idx_eatable, entry)
+            if eatable_type in ("meat", "trophallaxy"):
+                functions.sp_add(self.liste_perishables, self.idx_perishables, entry)
+
             # Ajout des plantes au quadtree
             bbox = (a - eatable_to_add.r_hit_box_eatable, b - eatable_to_add.r_hit_box_eatable, a + eatable_to_add.r_hit_box_eatable, b + eatable_to_add.r_hit_box_eatable)  # bbox définie comme un point car c'est son centre qui nous intéresse
-            self.quadtree.insert(item=[eatable_to_add, eatable_type], bbox=bbox)
+            self.quadtree.insert(item=entry, bbox=bbox)
 
-        else : #spawn à la position donnée (si on tue qqn par exemple)
-            if eatable_type in ["trophallaxy", "meat"]:
-                quantity_bouffe_taille_max = int(size // bouffe_taille_max) #si l'individu / trophallaxie est assez gros on lache plusieurs bout de viande pour favoriser la coopération potentielle
-                taille_bouffe_restante = size % bouffe_taille_max #taille restante
-                liste_eatable_to_spawn = [bouffe_taille_max for _ in range(quantity_bouffe_taille_max)] #liste des tailles de bouffe à spawn
-                # On ajoute la taille de bouffe restantes à la liste si il y en a
-                if taille_bouffe_restante > 0:
-                    liste_eatable_to_spawn.append(taille_bouffe_restante)
-                #Spawn des eatable
-                for eatable_taille in liste_eatable_to_spawn:
-                    eatable_to_add = eatable.Eatable()
-                    a = random.uniform(max(0, position[0] - (5*size)), min(taille_carte, position[0] + (5*size)))
-                    b = random.uniform(max(0, position[1] - (5*size)), min(taille_carte, position[1] + (5*size)))
-                    eatable_to_add.position = [a, b]
-                    eatable_to_add.energy = (eatable_taille/size) * energy #on divise l'energie de la bouffe par la taille de la bouffe pour avoir l'energie par unité de taille
-                    eatable_to_add.r_hit_box_eatable = eatable_taille
+        # else : #spawn à la position donnée (si on tue qqn par exemple)
+        #     if eatable_type in ["trophallaxy", "meat"]:
+        #         quantity_bouffe_taille_max = int(size // bouffe_taille_max) #si l'individu / trophallaxie est assez gros on lache plusieurs bout de viande pour favoriser la coopération potentielle
+        #         taille_bouffe_restante = size % bouffe_taille_max #taille restante
+        #         liste_eatable_to_spawn = [bouffe_taille_max for _ in range(quantity_bouffe_taille_max)] #liste des tailles de bouffe à spawn
+        #         # On ajoute la taille de bouffe restantes à la liste si il y en a
+        #         if taille_bouffe_restante > 0:
+        #             liste_eatable_to_spawn.append(taille_bouffe_restante)
+        #         #Spawn des eatable
+        #         for eatable_taille in liste_eatable_to_spawn:
+        #             eatable_to_add = eatable.Eatable()
+        #             a = random.uniform(max(0, position[0] - (5*size)), min(taille_carte, position[0] + (5*size)))
+        #             b = random.uniform(max(0, position[1] - (5*size)), min(taille_carte, position[1] + (5*size)))
+        #             eatable_to_add.position = [a, b]
+        #             eatable_to_add.energy = (eatable_taille/size) * energy #on divise l'energie de la bouffe par la taille de la bouffe pour avoir l'energie par unité de taille
+        #             eatable_to_add.r_hit_box_eatable = eatable_taille
                     
-                    self.liste_eatable.append([eatable_to_add, str(eatable_type)])
-                    # Ajout des plantes au quadtree
-                    bbox = (a - eatable_to_add.r_hit_box_eatable, b - eatable_to_add.r_hit_box_eatable, a + eatable_to_add.r_hit_box_eatable, b + eatable_to_add.r_hit_box_eatable)  # bbox définie comme un point car c'est son centre qui nous intéresse
-                    self.quadtree.insert(item=[eatable_to_add, eatable_type], bbox=bbox)
+        #             # swap and pop
+        #             entry = (eatable_to_add, eatable_type)  # eatable_type est déjà une string chez toi
+        #             functions.sp_add(self.liste_eatable, self.idx_eatable, entry)
+        #             if eatable_type in ("meat", "trophallaxy"):
+        #                 functions.sp_add(self.liste_perishables, self.idx_perishables, entry)
+
+        #             # Ajout des plantes au quadtree
+        #             bbox = (a - eatable_to_add.r_hit_box_eatable, b - eatable_to_add.r_hit_box_eatable, a + eatable_to_add.r_hit_box_eatable, b + eatable_to_add.r_hit_box_eatable)  # bbox définie comme un point car c'est son centre qui nous intéresse
+        #             self.quadtree.insert(item=entry, bbox=bbox)
         
+        else:  # spawn à une position donnée (meat / trophallaxy)
+            eatable_to_add = eatable.Eatable()
+            x, y = self.wrap_xy(position[0], position[1]) #evite de faire spawn hors de la map
+            eatable_to_add.position = [x, y]
+            #eatable_to_add.position = [position[0], position[1]]
+            eatable_to_add.energy = max(0.0, 0.0 if energy is None else energy)
+
+            entry = (eatable_to_add, eatable_type)
+            functions.sp_add(self.liste_eatable, self.idx_eatable, entry)
+            if eatable_type in ("meat", "trophallaxy"):
+                functions.sp_add(self.liste_perishables, self.idx_perishables, entry)
+
+            x, y = eatable_to_add.position
+            r = eatable_to_add.r_hit_box_eatable
+            self.quadtree.insert(item=entry, bbox=(x - r, y - r, x + r, y + r))
+
 
         #ajout à la liste des plantes pour la gestion des enfants uniquement
         if eatable_type == "plant":
-            self.liste_plantes.append([eatable_to_add, str(eatable_type)])
+            functions.sp_add(self.liste_plantes, self.idx_plantes, entry)
             
         
 
@@ -175,22 +234,26 @@ class Ecosystem:
         """création des individus"""
         #on créer nos individus au début
         self.liste_individus = [] #liste qui rescence les individus actuellement en vie
-        
+        self.idx_individus = {} #for the swap and pop in O(1)
+
         #initialisation d'individus pour lancer une nouvelle simulation normale
         if liste_individus_selectionnes == [] :
             if matrice_poids is None and biais_neurones is None and individu_to_be_used == None:
                 for num_individu in range(nbr_individus_init):
                     individu = Obj_individu() #creation de l'individu, il s'initialise deja avec body et brain
                     body = individu.body # creation de la reference body
-                    body.position = [random.uniform(3*taille_carte/7, 4*taille_carte/7), random.uniform(2*taille_carte/5, 3*taille_carte/5)]
+                    #body.position = [random.uniform(3*taille_carte/7, 4*taille_carte/7), random.uniform(2*taille_carte/5, 3*taille_carte/5)]
+                    body.position = [random.uniform(1, taille_carte-1), random.uniform(1, taille_carte-1)]
+
                     individu.ID = num_individu #cet ID permet d'identifier chaque individu
                     body.mutate_body_init() #on mute les caractéristiques du body (toutes ont une chance sauf les mutations features : neurones d'entrées et de sorties)
                     body.initialize_individu() #on initialise l'individu apres pour lui donner sa vie et energie de départ ( = f(son seuil max)) si mutations physiques de taille il y a eu
                     individu.brain.mutate_brain()
 
-                    self.liste_individus.append(individu)
+                    #self.liste_individus.append(individu)
+                    functions.sp_add(self.liste_individus, self.idx_individus, individu)
                     bbox = (body.position[0] - body.r_collision_box_individu, body.position[1] - body.r_collision_box_individu, body.position[0] + body.r_collision_box_individu, body.position[1] + body.r_collision_box_individu)
-                    self.quadtree.insert(item=[individu, "individual"], bbox=bbox)
+                    self.quadtree.insert(item=(individu, "individual"), bbox=bbox)
         
             #si on veut lancer une simulation avec des cerveaux spécifiques
             if matrice_poids is not None and biais_neurones is not None and individu_to_be_used == None: 
@@ -207,9 +270,10 @@ class Ecosystem:
                     individu.brain.valeurs_neurones = np.zeros(len(biais_neurones)) #on initialise les valeurs des neurones à 0
                     individu.brain.mutate_brain()
 
-                    self.liste_individus.append(individu)
+                    #self.liste_individus.append(individu)
+                    functions.sp_add(self.liste_individus, self.idx_individus, individu)
                     bbox = (body.position[0] - body.r_collision_box_individu, body.position[1] - body.r_collision_box_individu, body.position[0] + body.r_collision_box_individu, body.position[1] + body.r_collision_box_individu)
-                    self.quadtree.insert(item=[individu, "individual"], bbox=bbox)
+                    self.quadtree.insert(item=(individu, "individual"), bbox=bbox)
             
 
         #intitialisation des individus spécifiés pour une simulation seul (liste_individus_selectionnes != [])
@@ -219,12 +283,14 @@ class Ecosystem:
                 body.initialize_individu() 
                 body.position = [random.uniform(0, taille_carte), random.uniform(0, taille_carte)]
                 individu.ID = i
-                self.liste_individus.append(individu)
+                #self.liste_individus.append(individu)
+                functions.sp_add(self.liste_individus, self.idx_individus, individu)
                 bbox = (body.position[0] - body.r_collision_box_individu, body.position[1] - body.r_collision_box_individu, body.position[0] + body.r_collision_box_individu, body.position[1] + body.r_collision_box_individu)
-                self.quadtree.insert(item=[individu, "individual"], bbox=bbox)
+                self.quadtree.insert(item=(individu, "individual"), bbox=bbox)
             # If we use a precise individual as a copy for the simulation, we need to reinitialize the history after the individuals are picked up and initialized
             if individu_to_be_used != None:
                 self.reinitialize_history() 
+
 
 
     def deplacement_dynamique(self, nvl_position_x, nvl_position_y, individu_obj):
@@ -259,7 +325,7 @@ class Ecosystem:
             if entity_type == "individual":
                 ex, ey = (entity[0].body.position[0], entity[0].body.position[1])
                 # Exclure l'entité elle-même
-                if entity[0].ID == individu_obj.ID:
+                if entity[0] is individu_obj:
                     continue
                 distance = np.sqrt((ex - individu_obj.body.position[0]) ** 2 + (ey - individu_obj.body.position[1]) ** 2)
                 if distance <= individu_obj.body.r_collision_box_individu + entity[0].body.r_collision_box_individu:
@@ -286,94 +352,211 @@ class Ecosystem:
             # On affiche l'état de la population à la fin de la simulation
             print("Nombre d'enfants crées : ", self.compteur_BB)
             print(self.population_etat_fin_simulation)
+            print("Nombre de graines collectées par zoochrorie : ", self.seed_collected_zoochorie)
+            print("Nombre de graines déposées par zoochrorie : ", self.seed_droped_zoochorie)
             # Quitter le programme
             sys.exit(0)
 
 
 
-    def get_quadtree_tot(self, individu):
-        """Renvoie une liste contenant les entités dans le champ de vision de l'individu et un peu plus. Exclu l'individu lui même"""
-        x, y = individu.body.position[0], individu.body.position[1]
+    # def get_quadtree_tot(self, individu):
+    #     """Renvoie une liste contenant les entités dans le champ de vision de l'individu et un peu plus. Exclu l'individu lui même"""
+    #     x, y = individu.body.position[0], individu.body.position[1]
         
-        rayon_max_hit_box = max(individu.body.r_eat_box_individu, individu.body.r_collision_box_individu, individu.body.r_attack_box_individu, individu.body.ecoute_rayon)
+    #     rayon_max_hit_box = max(individu.body.r_eat_box_individu, individu.body.r_collision_box_individu, individu.body.r_attack_box_individu, individu.body.ecoute_rayon)
 
-        def calculer_points_intermediaires():
-            angles = np.linspace(individu.body.teta - individu.body.vision_demi_angle, individu.body.teta + individu.body.vision_demi_angle, round(individu.body.vision_demi_angle) + 1) #On couvre tous les degrés/2
-            points = [(x + individu.body.vision_rayon * np.cos(np.deg2rad(angle)), y + individu.body.vision_rayon * np.sin(np.deg2rad(angle))) for angle in angles]
-            return points
+    #     def calculer_points_intermediaires():
+    #         angles = np.linspace(individu.body.teta - individu.body.vision_demi_angle, individu.body.teta + individu.body.vision_demi_angle, round(individu.body.vision_demi_angle) + 1) #On couvre tous les degrés/2
+    #         points = [(x + individu.body.vision_rayon * np.cos(np.deg2rad(angle)), y + individu.body.vision_rayon * np.sin(np.deg2rad(angle))) for angle in angles]
+    #         return points
 
-        points_intermediaires = calculer_points_intermediaires()
-        x_points = [x] + [x - rayon_max_hit_box] + [x + rayon_max_hit_box] + [px for px, _ in points_intermediaires]
-        y_points = [y] + [y - rayon_max_hit_box] + [y + rayon_max_hit_box] + [py for _, py in points_intermediaires]
-        min_x, min_y, max_x, max_y = min(x_points), min(y_points), max(x_points), max(y_points)
-        bbox = (min_x, min_y, max_x, max_y)
-        quadtree_intersected = self.quadtree.intersect(bbox)
+    #     points_intermediaires = calculer_points_intermediaires()
+    #     x_points = [x] + [x - rayon_max_hit_box] + [x + rayon_max_hit_box] + [px for px, _ in points_intermediaires]
+    #     y_points = [y] + [y - rayon_max_hit_box] + [y + rayon_max_hit_box] + [py for _, py in points_intermediaires]
+    #     min_x, min_y, max_x, max_y = min(x_points), min(y_points), max(x_points), max(y_points)
+    #     bbox = (min_x, min_y, max_x, max_y)
+    #     quadtree_intersected = self.quadtree.intersect(bbox)
 
-        # Exclude the entity itself
-        quadtree_intersected.remove([individu, "individual"])
+    #     # Exclude the entity itself
+    #     quadtree_intersected.remove((individu, "individual"))
 
-        return quadtree_intersected, bbox
+    #     return quadtree_intersected, bbox
     
 
-    def get_entities_in_range(self, individu):
-        """Renvoie les entités mangeables, attaquables et visibles dans l'ensemble des entités retournées par le quadtree"""
+
+
+    def get_quadtree_tot(self, individu):
+        """BBox minimale qui englobe: individu (rayon_max_hit_box) + cone de vision (secteur)
+        IT RETURNS THE INDIVIDUAL ITSELF ! NEED TO SKIP IF IT'S THE INDIVIDUAL ITSELF WHEN CALLING THIS FUNCTION"""
+        def _angle_in_interval(a, start, end):
+            # intervalle [start, end] sur un cercle (wrap 360)
+            if start <= end:
+                return start <= a <= end
+            else:
+                return a >= start or a <= end
+            
+
         body = individu.body
-        
-        #liste des eatables à pop
-        liste_eatable_a_pop = []
+        x, y = body.position[0], body.position[1]
+
+        rmax = max(body.r_eat_box_individu, body.r_collision_box_individu,
+                body.r_attack_box_individu, body.ecoute_rayon)  # comme ton code :contentReference[oaicite:5]{index=5}
+
+        R = body.vision_rayon
+        teta = body.teta % 360.0
+        demi = body.vision_demi_angle
+
+        # Si le champ couvre tout le cercle (ou plus), bbox = disque complet
+        if 2.0 * demi >= 360.0:
+            min_x = x - max(R, rmax)
+            max_x = x + max(R, rmax)
+            min_y = y - max(R, rmax)
+            max_y = y + max(R, rmax)
+            bbox = (min_x, min_y, max_x, max_y)
+            out = self.quadtree.intersect(bbox)
+            return out, bbox
+
+        start = (teta - demi) % 360.0
+        end   = (teta + demi) % 360.0
+
+        # Angles à tester: bords + cardinaux s'ils sont dans l'intervalle
+        angles = [start, end]
+        for a in (0.0, 90.0, 180.0, 270.0):
+            if _angle_in_interval(a, start, end):
+                angles.append(a)
+
+        # Points candidats pour la bbox du cone
+        xs = [x - rmax, x + rmax, x]  # inclut l'individu
+        ys = [y - rmax, y + rmax, y]
+
+        for a in angles:
+            rad = math.radians(a)
+            xs.append(x + R * math.cos(rad))
+            ys.append(y + R * math.sin(rad))
+
+        bbox = (min(xs), min(ys), max(xs), max(ys))
+        out = self.quadtree.intersect(bbox)
+        return out, bbox
+
+
+
+    def get_entities_in_range(self, individu):
+        """Renvoie les entités comestibles, attaquables et visibles dans l'ensemble des entités retournées par le quadtree"""
+        body = individu.body
+
+        # listes de sortie
+        liste_eatable_entity = []
         list_reachable_entity = []
         list_visible_entity = []
         liste_audible_entity = []
 
+        # Constantes locales (évite des lookups + recalc)
+        bx, by = body.position[0], body.position[1]
+
+        vision2 = body.vision_rayon * body.vision_rayon
+        attack2 = body.r_attack_box_individu * body.r_attack_box_individu
+        ecoute2 = body.ecoute_rayon * body.ecoute_rayon
+
+        # stomach_ok = body.energie < facteur_energie_eat * body.max_energie_individu
+        # regime = body.regime
+
+        # Cône de vision (calculé une seule fois)
+        teta = body.teta % 360.0
+        demi = body.vision_demi_angle
+        start = (teta - demi) % 360.0
+        end   = (teta + demi) % 360.0
+
         # Interaction avec entités de proximité (quadtree)
-        quadtree_intersected, bbox = self.get_quadtree_tot(individu) #calcul avec des angles dans le sens trigo normal, on inverse juste pour la visualisation
+        quadtree_intersected, bbox = self.get_quadtree_tot(individu)
+
         for entity in quadtree_intersected:
             entity_type = entity[1]
-            ex, ey = (entity[0].body.position[0], entity[0].body.position[1]) if entity_type == "individual" else (entity[0].position[0], entity[0].position[1]) # If it's an individual, we get the position from the attribute of the body, otherwise we get it from the coordinates of the list representing the plant
-            distance = np.sqrt((ex - body.position[0]) ** 2 + (ey - body.position[1]) ** 2)
-            angle = np.arctan2(ey - body.position[1], ex - body.position[0]) * 360 / (2 * np.pi) % 360 # On compte dans le sens trigo les angles et en degrés
+            ent = entity[0]
             
-            # Eatable
+            # if individual ITSELF skip
+            if entity_type == "individual" and ent is individu:
+                continue
+
+
+            # Position de l'entité
+            if entity_type == "individual":
+                ex, ey = ent.body.position[0], ent.body.position[1]
+            else:
+                ex, ey = ent.position[0], ent.position[1]
+
+            dx = ex - bx
+            dy = ey - by
+            dist2 = dx*dx + dy*dy
+
+            # On calcule angle/distance uniquement si besoin
+            angle = None
+            distance = None
+
+            # --------------------
+            # Eatable (pas besoin d'angle)
+            # --------------------
             if entity_type != "individual":
-                # MANGEABLE : si c'est la classe du dessous ou si c'est mangeable par tout le monde
-                if distance <= body.r_eat_box_individu + entity[0].r_hit_box_eatable and body.energie < facteur_energie_eat*body.max_energie_individu: #n'a pas estomac infini
-                    is_eatable = False
-                    if entity_type == "trophallaxy": #always eatable
-                        is_eatable = True
-                    elif lvl_max_eat_scale == 0: #if just 1 diet, everything is eatable (meat and plant)
-                        is_eatable = True
-                    # If there are multiple diets, we need to check if the entity is eatable based on the diet
-                    else:
-                        if entity_type == "plant": #only eatable if regime is less than the max (GOAL : create a specialised meat class)
-                            is_eatable = body.regime < lvl_max_eat_scale
-                        elif entity_type == "meat": #only eatable if regime is more than the min (GOAL : create a specialised plant class)
-                            is_eatable = body.regime > 0
-                    # Finalement on mange tout ce qui est mangeable
-                    if is_eatable:
-                        liste_eatable_a_pop.append(entity)
-            
-            # Individu
-            elif entity_type == "individual":
-                # ATTAQUABLE
-                if distance <= body.r_attack_box_individu:
+                eat_r = body.r_eat_box_individu + ent.r_hit_box_eatable
+                if dist2 <= eat_r * eat_r:
+                    # is_eatable = False
+                    # if entity_type == "trophallaxy":
+                    #     is_eatable = True
+                    # elif lvl_max_eat_scale == 0:
+                    #     is_eatable = True
+                    # else:
+                    #     if entity_type == "plant":
+                    #         is_eatable = (regime < lvl_max_eat_scale)
+                    #     elif entity_type == "meat":
+                    #         is_eatable = (regime > 0)
+
+                    # if is_eatable:
+                        # liste_eatable_entity.append(entity)
+
+                    liste_eatable_entity.append(entity)
+
+            # --------------------
+            # Individu : attaquable / écoutable (angle utile)
+            # --------------------
+            if entity_type == "individual":
+                if dist2 <= attack2:
+                    if angle is None:
+                        angle = (math.degrees(math.atan2(dy, dx)) % 360.0)
+                    if distance is None:
+                        distance = math.sqrt(dist2)
                     list_reachable_entity.append([entity, distance, angle])
-                # ECOUTABLE
-                if distance <= body.ecoute_rayon and "bouche" in entity[0].body.liste_sorties_supplementaires: #Si il a une bouche et peut effectivement emettre un son
+
+                if dist2 <= ecoute2 and "bouche" in ent.body.liste_sorties_supplementaires:
+                    if angle is None:
+                        angle = (math.degrees(math.atan2(dy, dx)) % 360.0)
+                    if distance is None:
+                        distance = math.sqrt(dist2)
                     liste_audible_entity.append([entity, distance, angle])
-            
-            # Dans tous les cas (eatable ou individus)
-            # VOIR
-            if distance <= body.vision_rayon:
-                # Only things in range can be seen
-                list_visible_entity.append([entity, distance, angle])
 
+            # --------------------
+            # Vision (distance² puis cône)
+            # --------------------
+            if dist2 <= vision2:
+                if angle is None:
+                    angle = (math.degrees(math.atan2(dy, dx)) % 360.0)
 
-        return liste_eatable_a_pop, list_reachable_entity, list_visible_entity, liste_audible_entity
+                # Test "in_cone" robuste (wrap 0/360), identique à ton pattern
+                if start <= end:
+                    in_cone = (start <= angle <= end)
+                else:
+                    in_cone = (angle >= start or angle <= end)
 
+                if in_cone:
+                    if distance is None:
+                        distance = math.sqrt(dist2)
+                    list_visible_entity.append([entity, distance, angle])
 
+        return liste_eatable_entity, list_reachable_entity, list_visible_entity, liste_audible_entity
+
+  
 
     def eat_energy_plant(self, x, energy):
         """Fonction qui renvoie la quantité d'énergie/vie que l'individu gagne en mangeant une plante. Varie entre 0 et maximum et vaut "(energie_manger_plante/2) * facteur_mult_taille" au milieu. LINEAIRE"""
+        energy = max(0, energy)
         if lvl_max_eat_scale == 0:
             return energy
         else:
@@ -382,10 +565,23 @@ class Ecosystem:
 
     def eat_energy_meat(self, x, energy):
         """Fonction qui renvoie la quantité d'énergie/vie que l'individu gagne en mangeant une viande. Varie entre 0 et maximum et vaut "(energie_manger_meat/2) * facteur_mult_taille" au milieu. LINEAIRE"""
+        energy = max(0, energy)
         if lvl_max_eat_scale == 0:
             return energy
         else:
             return (x / lvl_max_eat_scale) * energy
+
+
+    def can_eat(self, regime, eatable_type):
+        # regime: 0 = herbivore, lvl_max_eat_scale = carnivore (les autres = omnivores)
+        if lvl_max_eat_scale == 0:
+            return True
+        if eatable_type == "plant":
+            return regime < lvl_max_eat_scale
+        if eatable_type == "meat":
+            return regime > 0
+        return True  # trophallaxy
+
 
 
     def create_bb(self, individu, nbr_bb, energie_parent):
@@ -419,12 +615,26 @@ class Ecosystem:
             angle_bb = np.deg2rad(random.uniform(0,360))
             body_bb.position[0] += (2*body_bb.r_collision_box_individu + body.r_collision_box_individu + np.ceil(pas_de_temps*1*body.facteur_multiplicatif_deplacement)) * np.cos(angle_bb) #no baby spawn in the parent if it spawns toward him
             body_bb.position[1] += (2*body_bb.r_collision_box_individu + body.r_collision_box_individu + np.ceil(pas_de_temps*1*body.facteur_multiplicatif_deplacement)) * np.sin(angle_bb)
+            body_bb.position[0], body_bb.position[1] = self.wrap_xy(body_bb.position[0], body_bb.position[1])
             body_bb.generation = body.generation + 1 #c'est la génération suivante
             # Ajouter dans la liste du quadtree l'individu et à la liste des individus
-            self.liste_individus.append(bb)
-            bbox = (body_bb.position[0] - body_bb.r_collision_box_individu, body_bb.position[1] - body_bb.r_collision_box_individu, body_bb.position[0] + body_bb.r_collision_box_individu, body_bb.position[1] + body_bb.r_collision_box_individu)
-            self.quadtree.insert(item=[bb,"individual"], bbox=bbox)
+            #self.liste_individus.append(bb)
+            functions.sp_add(self.liste_individus, self.idx_individus, bb)
             
+            bbox = (body_bb.position[0] - body_bb.r_collision_box_individu, body_bb.position[1] - body_bb.r_collision_box_individu, body_bb.position[0] + body_bb.r_collision_box_individu, body_bb.position[1] + body_bb.r_collision_box_individu)
+            self.quadtree.insert(item=(bb,"individual"), bbox=bbox)
+            
+
+    def size_plant_calculator(self, num_intervals=5):
+        """do the calculation for the size of the plant and its energy"""
+        size_factors = [(0.8 + 0.6 * i)/size_modification for i in range(num_intervals)]  # Génère les tailles [1, 1, 1.5, ..., 3.5] #SIZE MODIFCATION
+        energy_thresholds = [(0.45 + 0.1 * i) for i in range(num_intervals)]  # Génère les seuils [0.45, 0.55, ..., 1.05] facteur multplicatif
+        return size_factors, energy_thresholds
+    
+
+    def wrap_xy(self, x, y):
+        # carte continue : remet toujours dans [0, taille_carte)
+        return (x % taille_carte), (y % taille_carte)
 
 
     def jeu(self, simulation_seul_param):
@@ -435,6 +645,8 @@ class Ecosystem:
         liste_individus_a_ajouter_a_history = []
         temps = 0  #unité non définie
 
+        # Définir le nombre d'intervalles et les tailles associées des PLANTES
+        #self.size_factors, self.energy_thresholds = self.size_plant_calculator(num_intervals=5)
 
         # Listes pour plot nbr individus par classe
         self.data_temps = []
@@ -446,7 +658,6 @@ class Ecosystem:
 
         #while temps <= duree_simulation and len(self.liste_individus) :#and time.time() < time.mktime(end_time)> 0:
         while temps < duree_simulation and self.liste_individus:
-
             #affichage du temps en simulation d'entrainement
             if temps % 50 == 0 and simulation_seul_param == False: #tous les 5 pas de temps
                 print(f"temps : {temps}         Nbr individu : {len(self.liste_individus)}") #         Compteur mort : {self.compteur_mort}         Compteur trophallaxie : {self.compteur_trophallaxie}")
@@ -464,11 +675,22 @@ class Ecosystem:
 
 
             #on mélange la liste des individus. BUT : ne pas parcourir tjrs dans le même sens la liste : On évite ainsi ques les mêmes individus vont des BB
-            random.shuffle(self.liste_individus)
+            if temps % time_to_shuffle == 0:
+                random.shuffle(self.liste_individus)
+                self.idx_individus = functions.rebuild_index(self.liste_individus) # swap and pop
+                self.rr_start = 0  # optionnel : repartir propre
 
-            #chaque individu vie
-            for individu in list(self.liste_individus):
-                vivant = True #si l'individu meurt il n'a plus de volonté. On ne calcul donc pas sa vision par exemple. C'est de l'ptimisation
+            nombre_individus = len(self.liste_individus)
+            if self.liste_individus: #avoid mudulo 0
+                self.rr_start = (self.rr_start + 1) % nombre_individus # round-robin start index update to avoid always starting with the same individuals between shuffles (if shuffle is not done every turn)
+            to_remove_individu = [] # list to kill individual after the loop (allows not to do a "list()" that copies all individual at each time step)
+            # We go over every individual
+            for k in range(nombre_individus):
+                i = (self.rr_start + k) % nombre_individus
+                individu = self.liste_individus[i]
+
+
+                vivant = True #si l'individu meurt il n'a plus de volonté. On ne calcul donc pas sa vision par exemple. C'est de l'optimisation
                 #creation de la reference body & brain
                 body = individu.body
                 brain = individu.brain
@@ -477,12 +699,15 @@ class Ecosystem:
                 #meurt si l'individu n'a plus d'energie ou plus de vie
                 if body.vie <= 0 or body.age >= age_maximum:
                     vivant = False
-                    self.liste_individus.remove(individu) #on enlève de la liste des individus
-                    bbox = (body.position[0] - body.r_collision_box_individu, body.position[1] - body.r_collision_box_individu, body.position[0] + body.r_collision_box_individu, body.position[1] + body.r_collision_box_individu)
-                    self.quadtree.remove(item=[individu, "individual"], bbox=bbox)
+                    #self.liste_individus.remove(individu) #on enlève de la liste des individus
+                    # Swap and pop
+                    to_remove_individu.append(individu)
+                    #functions.sp_remove(self.liste_individus, self.idx_individus, individu)
+                    # ind_item = (individu, "individual")
+                    # bbox = (body.position[0] - body.r_collision_box_individu, body.position[1] - body.r_collision_box_individu, body.position[0] + body.r_collision_box_individu, body.position[1] + body.r_collision_box_individu)
+                    # self.quadtree.remove(item=ind_item, bbox=bbox)
                     if not simulation_seul_param:
                         liste_individus_a_ajouter_a_history.append(individu)
-
 
                 # only considering alive individual for no useless calculations
                 if vivant == True:
@@ -490,35 +715,87 @@ class Ecosystem:
                     # Gain life each turn according to it's lvl of energy. Full stomach => fast regeneration !
                     body.vie = min(body.max_vie_individu, body.vie + max(0, body.energie) / body.max_energie_individu) #gain de vie proportionnel à l'energie
                     
-
                     # Lose life if energy is too low
                     if body.energie <= 0 :
                         body.vie -= abs(body.energie) #on perd  de la vie si on a plus d'energie 
                         body.is_losing_life = True
 
                     # On parcourt le quadtree pour rechercher les entité à portée
-                    liste_eatable_a_pop, list_reachable_entity, list_visible_entity, liste_audible_entity = self.get_entities_in_range(individu)
+                    liste_eatable_entity, list_reachable_entity, list_visible_entity, liste_audible_entity = self.get_entities_in_range(individu)
                     
+
                     # INDIVIDU MANGE
-                    # On pop les eatables mangées et on donne de l'energie à l'individu.
-                    # On fait ca ici pour pas que 2 individus mangent la même plante
-                    for eatable_a_pop in liste_eatable_a_pop:
-                        #suppression du eatable de la liste des eatables et du quadtree
-                        self.liste_eatable.remove(eatable_a_pop) #on enlève de la liste des eatables
-                        self.liste_plantes.remove(eatable_a_pop) if eatable_a_pop[1] == "plant" else None
-                        eatable_x, eatable_y = eatable_a_pop[0].position[0], eatable_a_pop[0].position[1]
-                        bbox = (eatable_x - eatable_a_pop[0].r_hit_box_eatable, eatable_y - eatable_a_pop[0].r_hit_box_eatable, eatable_x + eatable_a_pop[0].r_hit_box_eatable, eatable_y + eatable_a_pop[0].r_hit_box_eatable)
-                        self.quadtree.remove(item=eatable_a_pop, bbox=bbox) #on enlève de la liste du quadtree
+                    inf_limit_to_eat = 1e-1
+                    for eatable in liste_eatable_entity:
                         
-                        #energie
-                        if eatable_a_pop[1] == "plant":
-                            body.energie = min(body.energie + self.eat_energy_plant(body.regime, eatable_a_pop[0].energy), body.max_energie_individu) # gain d'energie proportionnel à la taille de la plante (1 pour un individu de taille init)
+                        entity, type_entity = eatable
+
+                        # ------------------------
+                        # ZOOCHORIE (attraper graines au contact)
+                        # ------------------------
+                        if type_entity == "plant" and random.random() < seed_attach_prob and body.seed_bank < seed_bank_max :
+                            # on prélève un petit "paquet de graines" sur la plante (pas d'énergie créée)
+                            take = min(seed_packet_energy, max(0.0, entity.energy))
+                            if take > 0:
+                                body.seed_bank += take
+                                entity.energy -= take
+                                self.seed_collected_zoochorie += 1
+
+                                # si la plante tombe à 0, on la supprime comme d'habitude
+                                if entity.energy <= inf_limit_to_eat + 1e-3:
+                                    functions.sp_remove(self.liste_eatable, self.idx_eatable, eatable)
+                                    functions.sp_remove(self.liste_plantes, self.idx_plantes, eatable)
+                                    x, y = entity.position[0], entity.position[1]
+                                    r = entity.r_hit_box_eatable
+                                    self.quadtree.remove(item=eatable, bbox=(x - r, y - r, x + r, y + r))
+
+                        # ------------------------
+                        # MANGE
+                        # ------------------------
+                        stomach_room = body.max_energie_individu - body.energie
+                        if stomach_room <= inf_limit_to_eat:
+                            break  # estomac plein
+
+                        # check if eatable (regime doesn't allow herbivorous to eat meat and vice-vers)
+                        if not self.can_eat(body.regime, type_entity):
+                            continue
+
+                        # énergie assimilable si on mange tout (linéaire en entity.energy)
+                        if type_entity == "plant":
+                            gain_full = self.eat_energy_plant(body.regime, entity.energy)
+                        elif type_entity == "meat":
+                            gain_full = self.eat_energy_meat(body.regime, entity.energy)
+                        else:  # trophallaxy
+                            gain_full = entity.energy
+
+                        # Peut pas manger des micros miettes
+                        if gain_full < inf_limit_to_eat:
+                            continue
+
+                        # on assimile au plus ce qu'il reste dans l'estomac
+                        gain = stomach_room if stomach_room < gain_full else gain_full
+                        body.energie += gain
+
+                        # consommation partielle : fraction brute retirée (linéarité). Car la consommation n'est pas linéaire et dépend du régime
+                        entity.energy -= (gain / gain_full) * entity.energy
+
+                        # compteurs
+                        if type_entity == "plant":
                             body.compteur_plant_eaten += 1
-                        elif eatable_a_pop[1] == "meat":
-                            body.energie = min(body.energie + self.eat_energy_meat(body.regime, eatable_a_pop[0].energy), body.max_energie_individu) # gain d'energie proportionnel à la taille de la meat (1 pour un individu de taille init)
+                        elif type_entity == "meat":
                             body.compteur_meat_eaten += 1
-                        else : #trophallaxie
-                            body.energie = min(body.energie + eatable_a_pop[0].energy, body.max_energie_individu) # gain d'energie proportionnel à la taille de la trophallaxie (1 pour un individu de taille init)
+
+                        # suppression uniquement si entièrement consommé
+                        if entity.energy <= inf_limit_to_eat + 1e-3: #j'ajoute 1e-9 pour être sur que ce soit supprimé
+                            functions.sp_remove(self.liste_eatable, self.idx_eatable, eatable)
+                            if type_entity == "plant":
+                                functions.sp_remove(self.liste_plantes, self.idx_plantes, eatable)
+                            elif type_entity in ("meat", "trophallaxy"):
+                                functions.sp_remove(self.liste_perishables, self.idx_perishables, eatable)
+
+                            x, y = entity.position[0], entity.position[1]
+                            r = entity.r_hit_box_eatable
+                            self.quadtree.remove(item=eatable, bbox=(x - r, y - r, x + r, y + r))
 
                     
                     # CREER BEBE
@@ -564,113 +841,117 @@ class Ecosystem:
                     nvl_position = self.deplacement_dynamique(nvl_position_x, nvl_position_y, individu)  
                     # Retirer de la liste du quadtree l'individu
                     bbox = (body.position[0] - body.r_collision_box_individu, body.position[1] - body.r_collision_box_individu, body.position[0] + body.r_collision_box_individu, body.position[1] + body.r_collision_box_individu)
-                    self.quadtree.remove(item=[individu,"individual"], bbox=bbox)     
+                    self.quadtree.remove(item=(individu,"individual"), bbox=bbox)     
                     # Ajouter de la liste du quadtree l'individu
                     bbox = (nvl_position[0] - body.r_collision_box_individu, nvl_position[1] - body.r_collision_box_individu, nvl_position[0] + body.r_collision_box_individu, nvl_position[1] + body.r_collision_box_individu)
-                    self.quadtree.insert(item=[individu,"individual"], bbox=bbox) #on l'ajoute dans la liste du quadtree
+                    self.quadtree.insert(item=(individu,"individual"), bbox=bbox) #on l'ajoute dans la liste du quadtree
                     # Assigner la position finale            
                     body.position = [nvl_position[0], nvl_position[1]]
 
+                    # ZOOCHORIE
+                    if body.seed_bank >= seed_energy and random.random() < seed_drop_prob:
+                        x = body.position[0] - (2 + r_hit_box_eatable_init + body.r_eat_box_individu) * math.cos(math.radians(body.teta))
+                        y = body.position[1] - (2 + r_hit_box_eatable_init + body.r_eat_box_individu) * math.sin(math.radians(body.teta))
+                        self.add_eatable("plant", energy=seed_energy, position=(x, y))
+                        body.seed_bank -= seed_energy
+                        self.seed_droped_zoochorie += 1
+
+
                     #vieilli de 1 unité d'age
                     body.age += pas_de_temps
-
+                    #ralentissement tappé
+                    if body.compteur_injured > 0:
+                        body.compteur_injured -= 1
+                    else:
+                        body.compteur_injured = 0
 
                     # Compting the classes
                     self.nbr_par_classes[classes["individual"]] += 1
                     self.nbr_par_classes[body.regime + len(classes)] += 1
 
+            # We kill every individual that are dead this tick of time 
+            for individu in to_remove_individu:
+                # get the bbox of the individual to delete him from the quadtree
+                body = individu.body
+                bbox = (body.position[0] - body.r_collision_box_individu, body.position[1] - body.r_collision_box_individu, body.position[0] + body.r_collision_box_individu, body.position[1] + body.r_collision_box_individu)
+                # delete him from the list and the quadtree
+                functions.sp_remove(self.liste_individus, self.idx_individus, individu)
+                self.quadtree.remove(item=(individu,"individual"), bbox=bbox)
 
-
-            if temps % 1000 == 0:
-                self.nbr_min_plant = max(2, self.nbr_min_plant - pas_de_temps)
+            if temps % 1500 == 0:
+                self.nbr_min_plant = max(nbr_min_plant_final, self.nbr_min_plant - pas_de_temps)
 
 
             # Traitement des plantes : croissance avec l'énergie solaire, reproduction et mort par vieillesse
-            self.taille_liste_plantes = len(self.liste_plantes) 
-            if self.taille_liste_plantes > 0:
+            taille_liste_plantes = len(self.liste_plantes) 
+            if taille_liste_plantes > 0:
 
                 # Calcul de l'énergie solaire distribuée équitablement
-                energy_per_plant = min(solar_energy / self.taille_liste_plantes, gain_max_energy_per_turn)
-                for eatable in list(self.liste_plantes):  # Utilisation d'une copie implicite
+                energy_per_plant = min(solar_energy / taille_liste_plantes, gain_max_energy_per_turn)
+                
+                to_remove_plants = []
+                for i in range(taille_liste_plantes):  # Utilisation d'une copie implicite
+                    eatable = self.liste_plantes[i]
                     plant = eatable[0]
+                    
                     # Croissance et reproduction
-                    if self.taille_liste_plantes < max_plantes:
+                    if len(self.liste_plantes) < max_plantes:
                         plant.energy += energy_per_plant  # Ajout de l'énergie solaire
-
-
-                        # MODIFCATION SIZE PLANTS = f(ENERGY)
-                        # Définir le nombre d'intervalles et les tailles associées
-                        num_intervals = 5
-                        size_factors = [(0.8 + 0.6 * i)/size_modification for i in range(num_intervals)]  # Génère les tailles [1, 1, 1.5, ..., 3.5] #SIZE MODIFCATION
-                        energy_thresholds = [(0.45 + 0.1 * i) for i in range(num_intervals)]  # Génère les seuils [0.45, 0.55, ..., 1.05] facteur multplicatif
-                        # Trouver la taille correspondante à l'énergie actuelle
-                        for i, threshold in enumerate(energy_thresholds):
-                            if plant.energy < threshold * energy_plant_bb:
-                                new_size = size_factors[i]
-                                break
-                        else:
-                            new_size = size_factors[-1]  # Cas où l'énergie dépasse le dernier seuil
-                        # Mise à jour du Quadtree si la taille a changé
-                        if new_size != plant.r_hit_box_eatable:
-                            old_bbox = (
-                                plant.position[0] - plant.r_hit_box_eatable,
-                                plant.position[1] - plant.r_hit_box_eatable,
-                                plant.position[0] + plant.r_hit_box_eatable,
-                                plant.position[1] + plant.r_hit_box_eatable
-                            )
-                            self.quadtree.remove(item=eatable, bbox=old_bbox)
-                            plant.r_hit_box_eatable = new_size  # Mise à jour de la taille
-                            new_bbox = (
-                                plant.position[0] - plant.r_hit_box_eatable,
-                                plant.position[1] - plant.r_hit_box_eatable,
-                                plant.position[0] + plant.r_hit_box_eatable,
-                                plant.position[1] + plant.r_hit_box_eatable
-                            )
-                            self.quadtree.insert(item=[plant, "plant"], bbox=new_bbox)
-
 
                         # Reproduction si l'énergie dépasse le seuil
                         if plant.energy >= energy_plant_bb:
                             self.add_eatable("plant", eatable_parent=plant)
-                            self.taille_liste_plantes += 1
 
                     # Mort par vieillesse
                     if plant.age >= age_plant_max:
-                        self.delete_plant(eatable)
+                        to_remove_plants.append(eatable)
+                    
+                    # grow plants
+                    plant.grow()
+
+                    # count
+                    self.nbr_par_classes[classes[eatable[1]]] += 1 
+                
+                # deleting
+                for eatable in to_remove_plants:
+                    self.delete_plant(eatable)
                         
 
             # Ajouter des plantes si le nombre est inférieur au minimum requis
-            while self.taille_liste_plantes < self.nbr_min_plant:
+            while len(self.liste_plantes) < self.nbr_min_plant:
                 self.add_eatable("plant")
-                self.taille_liste_plantes += 1
 
             
             # Add a plant at a random location on the map (simulate the wind that brings seeds)
-            if temps % 1000 == 0:
-                self.delete_plant(random.choice(self.liste_plantes))
-                self.add_eatable("plant")
+            if temps % 500 == 0 and self.liste_plantes:
+                plant_to_move = random.choice(self.liste_plantes)
+                self.delete_plant(plant_to_move)
+                self.add_eatable("plant", energy=plant_to_move[0].energy, age=plant_to_move[0].age)
                 
 
+            to_remove_perish = []
             # Processing perishables (meat, trophallaxy) in a single pass
-            for perishable in list(self.liste_eatable):
-                if perishable[1] in ["meat", "trophallaxy"] and perishable[0].age >= age_eatable_perish:
-                    self.liste_eatable.remove(perishable)
-                    bbox = (
-                        perishable[0].position[0] - perishable[0].r_hit_box_eatable, 
-                        perishable[0].position[1] - perishable[0].r_hit_box_eatable,
-                        perishable[0].position[0] + perishable[0].r_hit_box_eatable, 
-                        perishable[0].position[1] + perishable[0].r_hit_box_eatable
-                    )
-                    self.quadtree.remove(item=perishable, bbox=bbox)
-                    del perishable # Suppression de l'objet pour libérer la mémoire
+            for perishable in self.liste_perishables:
+                if perishable[0].age >= age_eatable_perish:
+                    to_remove_perish.append(perishable)
+                # grow
+                perishable[0].grow()
+                # count
+                self.nbr_par_classes[classes[perishable[1]]] += 1 
                     
-            # Incrémentation de l'âge pour tous les eatables restants
-            for eatable in self.liste_eatable:
-                eatable[0].grow()
-                self.nbr_par_classes[classes[eatable[1]]] += 1 
-
-
-
+            # deleting 
+            for perishable in to_remove_perish:
+                # remove des listes (swap&pop)
+                functions.sp_remove(self.liste_perishables, self.idx_perishables, perishable)
+                functions.sp_remove(self.liste_eatable, self.idx_eatable, perishable)
+                bbox = (
+                    perishable[0].position[0] - perishable[0].r_hit_box_eatable, 
+                    perishable[0].position[1] - perishable[0].r_hit_box_eatable,
+                    perishable[0].position[0] + perishable[0].r_hit_box_eatable, 
+                    perishable[0].position[1] + perishable[0].r_hit_box_eatable
+                )
+                self.quadtree.remove(item=perishable, bbox=bbox)
+                del perishable # Suppression de l'objet pour libérer la mémoire
 
 
 
@@ -732,8 +1013,12 @@ class Ecosystem:
     def delete_plant(self, eatable):
         """ Delete a plant from quadtree, list_plant and list_eatable"""
         plant = eatable[0]
-        self.liste_plantes.remove(eatable)
-        self.liste_eatable.remove(eatable)
+        #self.liste_plantes.remove(eatable)
+        #self.liste_eatable.remove(eatable)
+        # swap and pop
+        functions.sp_remove(self.liste_plantes, self.idx_plantes, eatable)
+        functions.sp_remove(self.liste_eatable, self.idx_eatable, eatable)
+
         bbox = (
             plant.position[0] - plant.r_hit_box_eatable, 
             plant.position[1] - plant.r_hit_box_eatable,
@@ -741,7 +1026,6 @@ class Ecosystem:
             plant.position[1] + plant.r_hit_box_eatable
         )
         self.quadtree.remove(item=eatable, bbox=bbox)
-        self.taille_liste_plantes -= 1
         del eatable # Suppression de l'objet pour libérer la mémoire
 
 
@@ -749,9 +1033,9 @@ class Ecosystem:
     
     def export_sound(self):
         """Export the sound to a WAV file"""
-        if son_individu is not None:
+        if son_individu != None:
             # Si pas de son
-            if self.noise_intensity == -1:
+            if self.noise_intensity <= 0:
                 # Générer un silence
                 duration_ms = int(1000 / fps)  # Durée en ms pour une frame
                 silence = AudioSegment.silent(duration=duration_ms)  # Génération d'un segment de silence
@@ -839,9 +1123,14 @@ class Ecosystem:
                     classes_data[classe].append(int(row[i+1]))
         return temps, classes_data
 
+
     @staticmethod
     def bgr_to_rgb(bgr):
+        # si on reçoit [young, old], on prend la couleur "jeune" pour le plot
+        if isinstance(bgr, list):
+            bgr = bgr[0]
         return (bgr[2] / 255.0, bgr[1] / 255.0, bgr[0] / 255.0)
+
 
 
     def create_image_from_frame(self):
@@ -866,8 +1155,20 @@ class Ecosystem:
             :return: Nouvelle teinte de gris (r, g, b) """
             gris = int(255 * facteur)
             return (gris, gris, gris)
+        
+        def _lerp_int(a, b, t):
+            return int(a + (b - a) * t)
 
-        taille_fenetre = taille_carte
+        def _age_color(c_young, c_old, age, age_max):
+            """Interpolation de la couleur quand un eatable viellit il se foncit"""
+            t = 1.0 if age_max <= 0 else age / age_max
+            if t < 0.0: t = 0.0
+            elif t > 1.0: t = 1.0
+            return (_lerp_int(c_young[0], c_old[0], t),
+                    _lerp_int(c_young[1], c_old[1], t),
+                    _lerp_int(c_young[2], c_old[2], t))
+
+
 
         point_color_plante = colors[0]
         point_color_trophallaxie = colors[1]
@@ -878,7 +1179,7 @@ class Ecosystem:
         # Créer une image blanche de la taille de l'image de sortie
         img = Image.new('RGB', (self.taille_video, self.taille_video), (255, 255, 255))
         draw = ImageDraw.Draw(img)
-        font = ImageFont.truetype("./Roboto/Roboto-Regular.ttf", max(13/size_modification,5)) #font = ImageFont.load_default() #police par défaut et taille non réglable par défaut
+        font = self.font
         
 
         # Boucler à travers chaque individu et dessiner un cercle à leur position
@@ -887,6 +1188,12 @@ class Ecosystem:
             body = individu.body
             teta = body.teta
             x, y = body.position[0], body.position[1]
+
+            # Resize at the scale of the resolution of the video
+            sx = x / self.video_scale
+            sy = y / self.video_scale
+            sr = body.r_collision_box_individu / self.video_scale
+
             
             point_color_individu = colors[body.regime + 4]
             point_color_text = (0,0,0)
@@ -906,42 +1213,49 @@ class Ecosystem:
             if body.make_noise_bool:
                 # Clignotement : alterner l'affichage du cercle
                 if body.age % 3 == 0:  # Change de couleur tous les 5 frames
-                    draw.ellipse((x - body.r_collision_box_individu * 2, y - body.r_collision_box_individu * 2,
-                                x + body.r_collision_box_individu * 2, y + body.r_collision_box_individu * 2),
+                    draw.ellipse((sx - sr * 2, sy - sr * 2,
+                                sx + sr * 2, sy + sr * 2),
                                 outline=point_color_individu, width=1)
             # Dessiner INDIVIDU un cercle avec un rayon non entier
-            draw.ellipse((x - body.r_collision_box_individu, y - body.r_collision_box_individu,
-                        x + body.r_collision_box_individu, y + body.r_collision_box_individu),
+            draw.ellipse((sx - sr, sy - sr,
+                        sx + sr, sy + sr),
                         outline=point_color_individu, width=1, fill=fill_individu)
-            draw.line((x, y, x+(body.r_collision_box_individu+2.5)*np.cos(np.deg2rad(body.teta)), y+(body.r_collision_box_individu+2.5)*np.sin(np.deg2rad(body.teta))), fill=point_color_individu, width=1)  # Tracer la ligne
+            draw.line((sx, sy, sx+(sr+2.5/self.video_scale)*np.cos(np.deg2rad(body.teta)), sy+(sr+2.5/self.video_scale)*np.sin(np.deg2rad(body.teta))), fill=point_color_individu, width=1)  # Tracer la ligne
             # IDENTIFIANT : afficher ID au dessus de l'individu
-            draw.text((x + 1, y + 1), str(individu.ID), fill=point_color_text, font=font)
+            if print_ID_individu:
+                draw.text((sx + 1/self.video_scale, sy + 1/self.video_scale), str(individu.ID), fill=point_color_text, font=font)
 
             if affichage_complet:
-                liste_eatable_a_pop, list_reachable_entity, list_visible_entity, liste_audible_entity = self.get_entities_in_range(individu)
+                liste_eatable_entity, list_reachable_entity, list_visible_entity, liste_audible_entity = self.get_entities_in_range(individu)
                 liste_entree = body.fonction_vision(list_visible_entity, liste_audible_entity)
 
+                # resize video resolution
+                ser = body.r_eat_box_individu / self.video_scale
+                svr = body.vision_rayon / self.video_scale
+                sar = body.r_attack_box_individu / self.video_scale
+                secr = body.ecoute_rayon / self.video_scale
+
                 # HIT BOX : afficher hitbox
-                draw.ellipse((x - body.r_eat_box_individu, y - body.r_eat_box_individu,
-                            x + body.r_eat_box_individu, y + body.r_eat_box_individu),
+                draw.ellipse((sx - ser, sy - ser,
+                            sx + ser, sy + ser),
                             outline=(0,240,0), width=1)
-                draw.ellipse((x - body.r_collision_box_individu, y - body.r_collision_box_individu,
-                            x + body.r_collision_box_individu, y + body.r_collision_box_individu),
+                draw.ellipse((sx - sr, sy - sr,
+                            sx + sr, sy + sr),
                             outline=(0, 0, 0), width=1)
-                draw.ellipse((x - body.vision_rayon, y - body.vision_rayon,
-                            x + body.vision_rayon, y + body.vision_rayon),
+                draw.ellipse((sx - svr, sy - svr,
+                            sx + svr, sy + svr),
                             outline=(255, 0, 0), width=1)
-                draw.ellipse((x - body.r_attack_box_individu, y - body.r_attack_box_individu,
-                            x + body.r_attack_box_individu, y + body.r_attack_box_individu),
+                draw.ellipse((sx - sar, sy - sar,
+                            sx + sar, sy + sar),
                             outline=point_color_individu, width=1)
-                draw.ellipse((x - body.ecoute_rayon, y - body.ecoute_rayon,
-                            x + body.ecoute_rayon, y + body.ecoute_rayon),
+                draw.ellipse((sx - secr, sy - secr,
+                            sx + secr, sy + secr),
                             outline=(0, 0, 0), width=1)
 
-                if individu.ID == son_individu:
+                if son_individu != None and individu.ID == son_individu:
                     # Tracer origine bruit
                     frequence, intensity_x, intensity_y, depreciate_sound = body.liste_bruit_entendu
-                    if depreciate_sound != -1: #si il y a un bruit
+                    if depreciate_sound > 0: #si il y a un bruit
 
                         # Calculer la position de la source du bruit avec une rotation inverse
                         teta_rad = np.deg2rad(body.teta)
@@ -954,43 +1268,89 @@ class Ecosystem:
                         source_x, source_y = np.dot(rotation_matrix, np.array([intensity_x, intensity_y]))
                         source_x = body.position[0] + source_x
                         source_y = body.position[1] + source_y
-                        # Vérifier que les coordonnées pour l'ellipse sont valides
-                        x0 = source_x - 4
-                        y0 = source_y - 4
-                        x1 = source_x + 4
-                        y1 = source_y + 4
-                        draw.ellipse((x0, y0, x1, y1), fill=(0, 0, 255))  # Tracer l'ellipse
-                        draw.line((x, y, source_x, source_y), fill=(0, 0, 255), width=1)  # Tracer la ligne
+                        # resize video resolution
+                        ssource_x = source_x / self.video_scale
+                        ssource_y = source_y / self.video_scale
+                        # Vérifier que les coordonnées pour l'ellipse sont valides + resize video resolution
+                        sx0 = ssource_x - 4/self.video_scale
+                        sy0 = ssource_y - 4/self.video_scale
+                        sx1 = ssource_x + 4/self.video_scale
+                        sy1 = ssource_y + 4/self.video_scale
+                    
+                        draw.ellipse((sx0, sy0, sx1, sy1), fill=(0, 0, 255))  # Tracer l'ellipse
+                        draw.line((sx, sy, ssource_x, ssource_y), fill=(0, 0, 255), width=1)  # Tracer la ligne
 
-                # ZONE DE VISION : afficher champ de vision
-                def calculer_points_vision(rayon):
-                    angles = np.linspace(teta - body.vision_demi_angle, teta + body.vision_demi_angle, body.vision_nbr_parts + 1) % 360
-                    points = [(x + rayon * np.cos(np.deg2rad(angle)), y + rayon * np.sin(np.deg2rad(angle))) for angle in angles]
-                    return points
+                angles = np.linspace(teta - body.vision_demi_angle, teta + body.vision_demi_angle, body.vision_nbr_parts + 1) % 360
+                rayon_s = body.vision_rayon / self.video_scale
+                points_vision = [(sx + rayon_s*np.cos(np.deg2rad(a)), sy + rayon_s*np.sin(np.deg2rad(a))) for a in angles]
 
-                points_vision = calculer_points_vision(body.vision_rayon)
-                for point in points_vision:
-                    draw.line([(x,y), point], fill=(0, 0, 0), width=1)
+                for p in points_vision:
+                    draw.line([(sx, sy), p], fill=(0,0,0), width=1)
 
-                # ENTITEES VU PAR INDIVIDU : afficher ce que voit l'individu
-                for i in range(body.nbr_neurones_entrees_supplementaires, len(liste_entree), body.nbr_neurones_par_part):
-                    ma_liste = np.array(liste_entree[i:i+body.nbr_neurones_par_part], dtype=np.float64)
-                    draw.text(points_vision[i//body.nbr_neurones_par_part], str([float(round(x, 2)) for x in ma_liste]), fill=(0, 0, 0), font=font)
+                for part_idx, i in enumerate(range(body.nbr_neurones_entrees_supplementaires, len(liste_entree), body.nbr_neurones_par_part)):
+                    if part_idx >= len(points_vision): break
+                    ma_liste = liste_entree[i:i+body.nbr_neurones_par_part]
+                    draw.text(points_vision[part_idx], str([round(float(v), 2) for v in ma_liste]), fill=(0,0,0), font=font)
+
 
                 # BBOX : afficher la boite bbox du quadtree
                 quadtree_intersected, bbox = self.get_quadtree_tot(individu)
                 min_x, min_y, max_x, max_y = bbox
-                draw.rectangle([min_x, min_y, max_x, max_y], outline=(0, 255, 0), width=1)
+                # resize video resolution
+                smin_x, smin_y, smax_x, smax_y = min_x / self.video_scale, min_y / self.video_scale, max_x / self.video_scale, max_y / self.video_scale
+                draw.rectangle([smin_x, smin_y, smax_x, smax_y], outline=(0, 255, 0), width=1)
             
             #reset color is_losing_life at each turn
             body.is_losing_life = False
 
-        # PLANTES : Boucler à travers chaque plante et dessiner un cercle à leur position
+        # EATABLE : Boucler à travers chaque eatable et dessiner un cercle à leur position
         for eatable in self.liste_eatable:
-            point_size_eatable = eatable[0].r_hit_box_eatable
-            color = point_color_plante if eatable[1] == "plant" else point_color_trophallaxie if eatable[1] == "trophallaxy" else point_color_meat
-            x, y = eatable[0].position[0], eatable[0].position[1]
-            draw.ellipse((x - point_size_eatable, y - point_size_eatable, x + point_size_eatable, y + point_size_eatable), fill=color)
+            ##point_size_eatable = eatable[0].r_hit_box_eatable
+            # # DRAW PLANT function of their size representing the amount of energy it has
+            # if eatable[1] == "plant":
+            #     # taille VISUELLE = f(énergie), hitbox inchangée
+            #     e = eatable[0].energy
+            #     for i, threshold in enumerate(self.energy_thresholds):
+            #         if e < threshold * energy_plant_bb:
+            #             point_size_eatable = self.size_factors[i]
+            #             break
+            #     else:
+            #         point_size_eatable = self.size_factors[-1]
+            # # Draw other eatable
+            # else:
+            #     point_size_eatable = eatable[0].r_hit_box_eatable
+
+            # draw just function of the amount of energy it has
+            ent = eatable[0]
+            e = ent.energy
+            if e < 0.0:
+                e = 0.0
+
+            # Rayon VISUEL strictement linéaire en énergie (pas de max)
+            point_size_eatable = eatable_draw_min + eatable_draw_scale * e
+
+
+            # resize video resolution
+            spoint_size_eatable = point_size_eatable / self.video_scale
+            #color = point_color_plante if eatable[1] == "plant" else point_color_trophallaxie if eatable[1] == "trophallaxy" else point_color_meat
+            #color evolves linearily between 2 thresholds
+            typ = eatable[1]
+            if typ == "plant":
+                c0, c1 = colors[0]
+                color = _age_color(c0, c1, eatable[0].age, age_plant_max)
+            elif typ == "trophallaxy":
+                c0, c1 = colors[1]
+                color = _age_color(c0, c1, eatable[0].age, age_eatable_perish)
+            else:  # meat
+                c0, c1 = colors[2]
+                color = _age_color(c0, c1, eatable[0].age, age_eatable_perish)
+
+            
+            x_p, y_p = eatable[0].position[0], eatable[0].position[1]
+            # resize video resolution
+            sx_p = x_p / self.video_scale
+            sy_p = y_p / self.video_scale
+            draw.ellipse((sx_p - spoint_size_eatable, sy_p - spoint_size_eatable, sx_p + spoint_size_eatable, sy_p + spoint_size_eatable), fill=color)
 
         # conversion en image editable par opencv
         image_cv2 = np.array(img)
@@ -1331,6 +1691,8 @@ def main(path_population=None):
 
     ecosystem_obj.jeu(False)
     tps_final = time.time()
+    print("Nombre de graines collectées par zoochrorie : ", ecosystem_obj.seed_collected_zoochorie)
+    print("Nombre de graines déposées par zoochrorie : ", ecosystem_obj.seed_droped_zoochorie)
     print("Temps de la simulation : ", tps_final - tps_init)
     # On affiche l'état de la population à la fin de la simulation
     print(ecosystem_obj.population_etat_fin_simulation)

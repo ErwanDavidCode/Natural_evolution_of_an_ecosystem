@@ -22,6 +22,23 @@ def classe_to_binary(classe, nbr_classes):
     return [(classe >> i) & 1 for i in reversed(range(neurones))]
 
 
+def entity_type_to_square2(entity_type: str):
+    """
+    Mapping fixe "coins du carré" sur 2 neurones.
+    Rien = (0,0).
+    Types = (±1, ±1).
+    """
+    if entity_type == "individual":
+        return 1.0, 1.0
+    if entity_type == "plant":
+        return 1.0, -1.0
+    if entity_type == "meat":
+        return -1.0, 1.0
+    if entity_type == "trophallaxy":
+        return -1.0, -1.0
+    return 0.0, 0.0  # fallback (inconnu => rien)
+
+
 # nbr_classes = 2
 # classe = 1
 # print(classe_to_binary(classe, nbr_classes)) 
@@ -77,3 +94,20 @@ def get_list_same_individuals(fichier_path, individu_to_be_used, nbr_elem):
             raise ValueError(f"L'individu '{individu_to_be_used}' n'existe pas dans le fichier.")
         return [copy.deepcopy(individu_selectionne) for _ in range(nbr_elem)]
 
+
+def sp_add(lst, idx, item):
+    """Append O(1) + indexation O(1)."""
+    idx[item] = len(lst)
+    lst.append(item)
+
+def sp_remove(lst, idx, item):
+    """Remove O(1) via swap-with-last + pop."""
+    i = idx.pop(item)          # index de l'item
+    last = lst.pop()           # dernier élément
+    if i < len(lst):           # si item n'était pas le dernier
+        lst[i] = last
+        idx[last] = i
+
+def rebuild_index(lst):
+    """À appeler après un shuffle / réordonnancement externe."""
+    return {item: i for i, item in enumerate(lst)}
