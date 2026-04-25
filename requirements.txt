@@ -1,13 +1,8 @@
 numpy
-random
-cv2
+matplotlib
+opencv-python
 pyqtree
 networkx
-collections
-shelve
-signal
-functools
-csv
-PIL
+Pillow
 pydub
-moviepy
+moviepy<2.0
