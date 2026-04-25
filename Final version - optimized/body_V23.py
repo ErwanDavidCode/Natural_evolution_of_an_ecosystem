@@ -339,6 +339,8 @@ class Body:
         # Update the speed of the body
         if self.vision_demi_angle + variation <= 0.1: #on ne peut pas avoir un angle nulle ou négatif
             variation = 0
+        elif self.vision_demi_angle + variation >= 180: #cone ne peut pas dépasser 360° total
+            variation = 0
         self.vision_demi_angle += variation
 
 
@@ -545,8 +547,8 @@ class Body:
         cos = np.cos(teta_rad)
         sin = np.sin(teta_rad)
         rotation_matrix = np.array([
-            [cos, -sin],
-            [sin,  cos]
+            [cos,  sin],
+            [-sin, cos]
         ])
         # Transformer les coordonnées de l'émetteur dans le repère local de l'écouteur
         emetteur_position_local = np.dot(rotation_matrix, np.array([x_emetteur, y_emetteur]))
@@ -770,8 +772,8 @@ class Body:
         # Soustraire l'énergie utilisée pour cracher l'objet de l'énergie disponible de l'individu
         self.energie -= energy
         #x_drop, y_drop = self.position[0] - (2 + r_hit_box_eatable_init + self.r_collision_box_individu + np.ceil(pas_de_temps*1*self.facteur_multiplicatif_deplacement)) * np.cos(np.deg2rad(self.teta)), self.position[1] - (2 + r_hit_box_eatable_init + self.r_collision_box_individu + np.ceil(pas_de_temps*1*self.facteur_multiplicatif_deplacement)) * np.sin(np.deg2rad(self.teta))
-        x_drop = self.position[0] - (2 + r_hit_box_eatable_init + self.r_eat_box_individu) * math.cos(self.teta)
-        y_drop = self.position[1] - (2 + r_hit_box_eatable_init + self.r_eat_box_individu) * math.sin(self.teta)
+        x_drop = self.position[0] - (2 + r_hit_box_eatable_init + self.r_eat_box_individu) * math.cos(math.radians(self.teta))
+        y_drop = self.position[1] - (2 + r_hit_box_eatable_init + self.r_eat_box_individu) * math.sin(math.radians(self.teta))
 
         ecosystem_obj.add_eatable("trophallaxy", energy=energy, position=(x_drop, y_drop)) #mangeable par tout le monde
         self.compteur_trophallaxie += 1

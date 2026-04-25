@@ -61,7 +61,7 @@ time_to_shuffle = 1000 #temps pour mélanger la liste des individus. Plus il est
 
 # #initialisation - normal simu -------------------------------------------------------------------------------
 size_modification = 1
-taille_carte = 1200
+taille_carte = 1500
 max_individu = 100000
 nbr_individus_init = 100 #100 is good
 max_plantes = 1000
@@ -123,7 +123,7 @@ r_attack_box_individu_init = r_collision_box_individu_init * 20 #range to attack
 r_hit_box_eatable_init = 1 #size of the plant. Peut avoir des tailles différentes pour les steak et trophallaxie fonction de la taille de l'individu. Doit etre de la meme taille que r_hit_box_individu a l'initialisation ? #SIZE MODIFCATION
 
 #vision
-vision_rayon_init = 500/size_modification #ATTENTION : il faut que ce soit supérieur à (r_hit_box_individu+r_hit_box_plante) #SIZE MODIFCATION
+vision_rayon_init = 400/size_modification #ATTENTION : il faut que ce soit supérieur à (r_hit_box_individu+r_hit_box_plante) #SIZE MODIFCATION
 vision_demi_angle_init = 20 #degrés
 max_rotation_init = 20 #degrés du demi angle
 

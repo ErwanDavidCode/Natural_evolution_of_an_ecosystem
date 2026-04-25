@@ -313,7 +313,7 @@ class Ecosystem:
         #bordure basse
         elif nvl_position_y <= 0:
             delta = np.abs(nvl_position_y - 0)
-            nvl_position_y = taille_carte + delta    
+            nvl_position_y = taille_carte - delta
         
 
         #colision
@@ -327,7 +327,7 @@ class Ecosystem:
                 # Exclure l'entité elle-même
                 if entity[0] is individu_obj:
                     continue
-                distance = np.sqrt((ex - individu_obj.body.position[0]) ** 2 + (ey - individu_obj.body.position[1]) ** 2)
+                distance = np.sqrt((ex - nvl_position_x) ** 2 + (ey - nvl_position_y) ** 2)
                 if distance <= individu_obj.body.r_collision_box_individu + entity[0].body.r_collision_box_individu:
                     # colision new pos : on ne bouge pas
                     nvl_position_x, nvl_position_y = individu_obj.body.position[0], individu_obj.body.position[1]

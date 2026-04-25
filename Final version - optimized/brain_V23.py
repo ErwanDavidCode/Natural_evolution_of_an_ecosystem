@@ -450,7 +450,7 @@ class Brain:
             
             #ajouter neurone dans liste_neurones, biais et fonctions
             self.valeurs_neurones = np.append(self.valeurs_neurones, 0.0)
-            self.biais_neurones = np.append(self.biais_neurones, random.random()*2-1)
+            self.biais_neurones = np.append(self.biais_neurones, random.uniform(-0.1, 0.1))
             self.activation_functions = np.append(self.activation_functions, np.tanh)
 
 

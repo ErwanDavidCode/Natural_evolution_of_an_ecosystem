@@ -25,6 +25,10 @@ python ecosystem_V23_huge_scale.py
 
 Output (video + population graph) is saved to the `Videos/` folder.
 
+**Stopping early:** press `Ctrl+C` at any time — the interrupt is caught gracefully and the video and population history are still exported before the process exits.
+
+**Auto-restart:** if `start_again_until_alive_pop = True` in `parameters_V23.py`, the simulation automatically restarts whenever the population goes extinct, so it keeps running unattended. To avoid losing a good run across a restart, set `time_to_save_video` (default `15000` ticks): once a run exceeds that many ticks a timestamped copy of the video and history is written to `Videos/` immediately — meaning it is preserved even if the simulation later crashes or restarts.
+
 ---
 
 ## Configuration
@@ -75,8 +79,6 @@ All parameters are in `Final version - optimized/parameters_V23.py`.
 | `proba_ajouter_neurone_init` | 0.07 | Probability of adding a hidden neuron |
 | `proba_supprimer_neurone_init` | 0.07 | Probability of removing a hidden neuron |
 | `alpha_init` | 0.2 | Meta-mutation rate (how fast mutation probs themselves evolve) |
-
-Stop anytime with `Ctrl+C` — this is caught gracefully and triggers video/history export.
 
 **To inspect a specific individual:** set `characteristics_ID_individu = <ID>` in `parameters_V23.py` (ID visible in the video), then rerun. Its brain and traits will be displayed.
 
