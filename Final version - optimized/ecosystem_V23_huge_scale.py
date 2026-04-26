@@ -13,6 +13,7 @@ import sys
 import warnings
 import shelve
 import os
+import glob
 import signal
 from functools import partial
 import csv
@@ -993,8 +994,9 @@ class Ecosystem:
             os.rename(r'../Videos/video.mp4', new_video_path)  # Renommer le fichier
             # Rename History
             self.historique_path = f'./data/historique_individus_{unique_id}'
-            for ext in ('.bak', '.dat', '.dir'):
-                os.rename(r'./data/historique_individus' + ext, self.historique_path + ext)
+            for fpath in glob.glob('./data/historique_individus.*'):
+                ext = os.path.splitext(fpath)[1]
+                os.rename(fpath, self.historique_path + ext)
             # Rename Plot
             new_plot_path = f'../Videos/plot_evolution_entities_{unique_id}.png'
             os.rename(f'../Videos/plot_evolution_entities.png', new_plot_path)
