@@ -11,7 +11,7 @@ import networkx as nx
 from collections import deque
 import sys
 import warnings
-import shelve
+import pickle
 import os
 import glob
 import signal
@@ -98,12 +98,12 @@ class Ecosystem:
 
     def reinitialize_history(self):
         # Supprimer les fichiers existants du shelve
-        for ext in ['', '.db', '.bak', '.dat', '.dir']:
+        for ext in ['', '.db', '.bak', '.dat', '.dir', '.pkl']:
             full_path = "./data/historique_individus" + ext
             if os.path.exists(full_path):
-                os.remove(full_path) # Supprimer le fichier ancien historique
-        with shelve.open("./data/historique_individus", flag='n') as db:
-            pass  # Ne rien faire, juste créer le fichier
+                os.remove(full_path)
+        with open("./data/historique_individus.pkl", 'wb') as f:
+            pickle.dump({}, f)
 
 
     def initialisation(self, liste_individus_selectionnes=[], matrice_poids = None, biais_neurones = None):
@@ -1364,7 +1364,8 @@ class Ecosystem:
         print('\n')
         try:
             #on récupère l'individu avec l'ID : ID_individu
-            with shelve.open(fichier_path) as db:
+            with open(fichier_path + '.pkl', 'rb') as f:
+                db = pickle.load(f)
                 liste_individus_selectionnes = []
                 for ID_individu in liste_ID_individu_selectionnes:
                     individu = db.get(str(ID_individu), None)
@@ -1380,17 +1381,25 @@ class Ecosystem:
 
 
     def add_to_history(self, liste_individus):
-        """Add the list of individuals to the history file shelve with ID as key."""
-        with shelve.open(self.historique_path, writeback=True) as db:
-            for individu in liste_individus:
-                db[str(individu.ID)] = individu
+        """Add the list of individuals to the history file with ID as key."""
+        path = self.historique_path + '.pkl'
+        if os.path.exists(path):
+            with open(path, 'rb') as f:
+                db = pickle.load(f)
+        else:
+            db = {}
+        for individu in liste_individus:
+            db[str(individu.ID)] = individu
+        with open(path, 'wb') as f:
+            pickle.dump(db, f)
 
 
 
 def detail_individu(ID_individu):
     """Affiche les détails de l'individu dont l'ID est passé en argument."""
-    with shelve.open(fichier_path) as db:
-        individu_selectionne = db.get(str(ID_individu), None)
+    with open(fichier_path + '.pkl', 'rb') as f:
+        db = pickle.load(f)
+    individu_selectionne = db.get(str(ID_individu), None)
 
     print("\n")
     print(individu_selectionne)
