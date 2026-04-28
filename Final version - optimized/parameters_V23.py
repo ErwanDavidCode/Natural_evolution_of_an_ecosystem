@@ -232,3 +232,5 @@ proba_supprimer_biais_init = 0.05
 nbr_modifications_proba = 5 #every probas mutation are equiprobable
 alpha_init = 0.2 #brain proba mutation rate, the bigger it is, the most the mutation proba can change. It is the same rate for all the mutation proba. This alpha is mutated by the beta
 beta = 0.1 #DO NOT MUTATE. alpha mutation rate, the bigger it is, the most alpha can change, so the more adaptable the individual can become. Should be small. Is fixed. Should not exceed one.
+
+# dummy commit
