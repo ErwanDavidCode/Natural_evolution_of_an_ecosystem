@@ -16,7 +16,6 @@ import os
 import glob
 import signal
 from functools import partial
-import csv
 from PIL import Image, ImageDraw, ImageFont
 from pydub import AudioSegment
 from pydub.generators import Sine
@@ -28,6 +27,7 @@ import brain_V23 as brain
 import body_V23 as body
 import observer_V23 as observer
 import eatable_V23 as eatable
+import metrics_V23 as metrics
 
 import functions_V23 as functions
 
@@ -84,17 +84,15 @@ class Ecosystem:
             # Initialiser le shelve
             if individu_to_be_used is None:
                 self.reinitialize_history()
-            # Initialiser le fichier CSV
-            with open("./data/plot_evolution.csv", 'w', newline='') as csvfile:
-                writer = csv.writer(csvfile)
-                header = ['temps'] + list(classes.values())
-                writer.writerow(header)
 
         else: #if alone simulation
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             self.out = cv2.VideoWriter(r'../Videos/video_alone.mp4', fourcc, fps, (self.taille_video, self.taille_video))
             # Initialiser une piste audio vide
             self.audio_out = AudioSegment.silent(duration=0)
+
+        # Centralized, optional metrics/observability layer (toggle with enable_metrics in parameters)
+        self.metrics = metrics.Metrics(active=(enable_metrics and liste_ID_alone_simulation == []))
 
     def reinitialize_history(self):
         # Supprimer les fichiers existants du shelve
@@ -344,7 +342,7 @@ class Ecosystem:
             if simulation_seul_param == False:
                 self.add_to_history(self.liste_individus + liste_individus_a_ajouter_a_history)
         
-            self.save_plot() #graphique population
+            self.metrics.metrics_render(self.historique_path) #centralized metrics figures + summary
             self.out.release() #cloture de la video
             self.export_and_merge_audio() #fusionner audio et video
 
@@ -648,12 +646,6 @@ class Ecosystem:
 
         # Définir le nombre d'intervalles et les tailles associées des PLANTES
         #self.size_factors, self.energy_thresholds = self.size_plant_calculator(num_intervals=5)
-
-        # Listes pour plot nbr individus par classe
-        self.data_temps = []
-        self.data_classes = {classe: [] for classe in classes.values()}
-        for regime in range(lvl_max_eat_scale + 1):
-            self.data_classes[regime + len(classes)] = []
 
         signal.signal(signal.SIGINT, partial(self.handle_ctrl_c, simulation_seul_param, liste_individus_a_ajouter_a_history)) # Capture Ctrl+C
 
@@ -973,33 +965,32 @@ class Ecosystem:
             # Son
             self.export_sound()  # Méthode pour exporter le son à chaque itération
 
-            # Collecte des données pour le plot
-            if not simulation_seul_param:
-                self.collect_data(temps)
-
-
-        # Sauver le plot si simualtion complete
-        self.save_plot() if simulation_seul_param == False else None
+            # Collecte des données pour le plot (centralized metrics layer; self-gates when disabled)
+            self.metrics.metrics_record_step(temps, self.nbr_par_classes, self.liste_individus)
 
 
         # Ajout des individus à l'historique
         self.add_to_history(self.liste_individus + liste_individus_a_ajouter_a_history) if simulation_seul_param == False else None
 
-        # Renaming the video file not to overwrite the previous one if temps>something
+        # Render every metric/figure from the centralized layer (reads the just-completed history)
+        self.metrics.metrics_render(self.historique_path)
+
+        # Si le run dépasse time_to_save_video steps, on sauvegarde la vidéo, l'historique et les
+        # plots sous un même ID de run unique "_<run_id>". Un jeu de fichiers par run intéressant,
+        # donc plusieurs sauvegardes en laissant tourner la nuit (1 sauvegarde par run > seuil).
         if temps > time_to_save_video and not simulation_seul_param:
-            unique_id = int(time.time())
-            # Rename Video
-            new_video_path = f'../Videos/video_{unique_id}.mp4'
+            run_id = int(time.time())  # ID unique partagé par la vidéo, l'historique et les plots
+            # Save Video
+            new_video_path = f'../Videos/video_{run_id}.mp4'
             self.out.release()  # Relâcher le fichier actuel
             os.rename(r'../Videos/video.mp4', new_video_path)  # Renommer le fichier
-            # Rename History
-            self.historique_path = f'./data/historique_individus_{unique_id}'
+            # Save History
+            self.historique_path = f'./data/historique_individus_{run_id}'
             for fpath in glob.glob('./data/historique_individus.*'):
                 ext = os.path.splitext(fpath)[1]
                 os.rename(fpath, self.historique_path + ext)
-            # Rename Plot
-            new_plot_path = f'../Videos/plot_evolution_entities_{unique_id}.png'
-            os.rename(f'../Videos/plot_evolution_entities.png', new_plot_path)
+            # Save metric figures
+            self.metrics.metrics_finalize(run_id)
 
         self.out.release() #cloture de la video
         self.export_and_merge_audio() #fusionner audio et video
@@ -1064,74 +1055,10 @@ class Ecosystem:
 
 
 
-    def collect_data(self, temps):
-        """Collect the data for the plot"""
-        # Fréquence d'échantillonnage pour le plot
-        if temps % sampling_rate == 0:
-            self.data_temps.append(temps)
-            for classe in self.nbr_par_classes.keys():
-                self.data_classes[classe].append(self.nbr_par_classes[classe])
-        # Sauvegarder périodiquement les données dans un CSV
-        if temps % saving_rate == 0:
-            self.save_to_csv()
-
-    def save_to_csv(self):
-        """Save the data to a CSV file"""
-        # Saving the data to a CSV file
-        with open("./data/plot_evolution.csv", 'a', newline='') as csvfile:
-            writer = csv.writer(csvfile)
-            for i in range(len(self.data_temps)):
-                row = [self.data_temps[i]] + [self.data_classes[classe][i] for classe in self.nbr_par_classes.keys()]
-                writer.writerow(row)
-        # Vider les buffers après sauvegarde
-        self.data_temps.clear()
-        for classe in self.nbr_par_classes.keys():
-            self.data_classes[classe].clear()
-
-    def save_plot(self):
-        """Save the plot to a PNG file"""
-        def get_key_by_value(dictionary, value):
-            if value < len(dictionary):
-                for key, val in dictionary.items():
-                    if val == value:
-                        return key
-            else:
-                return f'Diet: {value - len(dictionary)}'
-        # Charger toutes les données depuis le CSV
-        temps, classes_data = self.load_data_from_csv()
-        plt.figure(figsize=(10, 6))
-        for classe in classes_data.keys():
-            bgr_color = colors[classe]
-            rgb_color = self.bgr_to_rgb(bgr_color)
-            plt.plot(temps, classes_data[classe], label=f'{get_key_by_value(classes, classe)}', color=rgb_color)
-        plt.xlabel('Time [while loop iterations]')
-        plt.ylabel('Number of individuals')
-        plt.title('Number of individuals per class')
-        plt.legend()
-        plt.grid(True)
-        plt.savefig('../Videos/plot_evolution_entities.png')
-        plt.close()
-
-    def load_data_from_csv(self):
-        """Load the data from the CSV file"""
-        temps = []
-        classes_data = {classe: [] for classe in self.nbr_par_classes.keys()}
-        with open("./data/plot_evolution.csv", 'r') as csvfile:
-            reader = csv.reader(csvfile)
-            next(reader)  # Skip header
-            for row in reader:
-                temps.append(int(row[0]))
-                for i, classe in enumerate(self.nbr_par_classes.keys()):
-                    classes_data[classe].append(int(row[i+1]))
-        return temps, classes_data
-
-
-    @staticmethod
-    def bgr_to_rgb(bgr):
-        # si on reçoit [young, old], on prend la couleur "jeune" pour le plot
-        if isinstance(bgr, list):
-            bgr = bgr[0]
-        return (bgr[2] / 255.0, bgr[1] / 255.0, bgr[0] / 255.0)
+    # Population logging + all plotting now live in the centralized, optional Metrics
+    # layer (metrics_V23.py): self.metrics.metrics_record_step() during the run and
+    # self.metrics.metrics_render() at the end. Remove that file + the few
+    # self.metrics.* call sites to drop the whole observability layer.
 
 
 

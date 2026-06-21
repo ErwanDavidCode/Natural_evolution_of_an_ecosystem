@@ -18,6 +18,7 @@ start_again_until_alive_pop = True                                              
 statistics = False                                                                # False, True. A LANCER APRES LACEMENT DE LA SIMULATION AVEC TOUT LE MONDE. Affiche les ID des individus aux comportements les plus intéressants. Doit etre False pour lancer simulation complete
 affichage_complet = False                                                         # True or False. Afficher les détails de chaque individu (rayon vision etc ...). Que pour simulation_seule
 print_ID_individu = False                                                         # Print the ID of the individual above their head or not
+enable_metrics = True                                                             # True or False. Master switch for the centralized metrics layer (metrics_V23.py): population curve + phase portrait + dashboard + summary. False = no logging/plots at all
 
 fichier_path = './data/historique_individus'                                      # Chemin pour: characteristics_ID_individu / liste_ID_alone_simulation / statistics. Doit etre de la forme "historique_individus_1721293772"
 characteristics_ID_individu = None                                      # None or Int. A LANCER APRES LACEMENT DE LA SIMULATION AVEC TOUT LE MONDE. Lancer la simulation complete si characteristics_ID_individu = None  /  afficher détail individu si characteristics_ID_individu = un ID (int)
@@ -35,7 +36,7 @@ load_population = None                                                          
 
 
 #PARAMETRES
-time_to_save_video = 15000 #Si le temps attend cette valeur, on sauvegarde la vidéo et l'historique dans un fichier avec un nom unique. BUT : avoir une save des vidéos et historiques intéressants
+time_to_save_video = 50000 #Si le temps attend cette valeur, on sauvegarde la vidéo et l'historique dans un fichier avec un nom unique. BUT : avoir une save des vidéos et historiques intéressants
 duree_simulation = 20000000 #Can do a Ctrl+C to stop the simulation and still have the video and the history of individuals
 end_time = time.strptime("24 Jun 2024 14:30:00", "%d %b %Y %H:%M:%S") #lancer la simulation jusquà ce temps
 pas_de_temps = 1
