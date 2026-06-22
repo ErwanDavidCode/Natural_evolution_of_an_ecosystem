@@ -113,8 +113,8 @@ class Brain:
         for neurone in range(ind_min, ind_max + 1):
             hidden_connectees = np.random.choice(neurons_available, nbr_connexions_hidden, replace=False)
             for hidden in hidden_connectees:
-                # Assigner un poids aléatoire à la connexion
-                self.matrice_poids[neurone][hidden] = np.random.uniform(-1, 1)
+                # Poids quasi-nul: nouveau neurone feature quasi-silencieux (protection de l'innovation)
+                self.matrice_poids[neurone][hidden] = np.random.uniform(-poids_init_feature_neurone, poids_init_feature_neurone)
 
 
     def connect_hidden_to_output(self, ind_min, ind_max):
@@ -131,7 +131,8 @@ class Brain:
         for neurone in range(ind_min, ind_max + 1):
             for _ in range(nbr_connexions_hidden):
                 connected = np.random.choice(neurons_available)
-                self.matrice_poids[connected][neurone] = np.random.uniform(-1, 1)
+                # Poids quasi-nul: nouveau neurone feature (sortie) quasi-silencieux (protection de l'innovation)
+                self.matrice_poids[connected][neurone] = np.random.uniform(-poids_init_feature_neurone, poids_init_feature_neurone)
 
 
 

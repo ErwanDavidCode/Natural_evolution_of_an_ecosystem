@@ -68,7 +68,7 @@ nbr_individus_init = 100 #100 is good
 max_plantes = 1000
 nbr_plantes_init = 90*size_modification #90*
 nbr_min_plant_init = 9*size_modification #nombre de nouvelle graine quand plus de plante du tout
-nbr_min_plant_final = 1*size_modification #nombre de plante min decroit tous les 1000 ticks de 1
+nbr_min_plant_final = 1 #plancher de plantes CONSTANT (pas de décroissance). Mettre < nbr_min_plant_init pour réactiver une décroissance vers cette valeur
 
 
 #paramètres plantes
@@ -76,6 +76,7 @@ age_plant_max = 4000 #age pour qu'une plante meurt
 energy_plant_bb = 60 #energy pour que la plante fasse un bébé et DIVISEE PAR 2 son énergie. C'est donc l'energie max apportée a un individu quand il mange une plante par conservation de l'énergie #SIZE MODIFCATION
 age_eatable_perish = 5000 #age pour qu'un eatble pourisse et disparaisse
 range_max_spawn_plant = 250/size_modification #range max pour qu'une plante créer un bébé autour d'elle #SIZE MODIFCATION
+proba_dispersion_plante = 0.2 #proba qu'un bébé plante apparaisse à une position ALEATOIRE sur la carte (dispersion longue distance) plutôt que près du parent. 0 = comportement d'origine (toujours près du parent). L'énergie reste partagée avec le parent (conservée)
 #bouffe_taille_max = 2/size_modification #taille max d'un steak ou trophallaxie sans etre dé-doublé lors de son spawn #SIZE MODIFCATION
 #Attention, en plus des plant min, une seed de plante apparait tous les 2000 itérations
 
@@ -211,6 +212,7 @@ liste_sorties_supplementaires_possibles_init = {"trophallaxy" : 1, "bouche" : 2,
 #proba cerveau
 nbr_connexions_init = 2 #DOIT ETRE <= NBR SORTIE INIT (=2). nombre de connexions initiales cerveaux par neurones d'entrée
 nbr_connexions_hidden = 2 #DOIT ETRE <= NBR SORTIE INIT (=2). nombre de connexions cerveaux pour chaque nv neuronnes feature ajouté (en entrée ou sortie) vers les hidden
+poids_init_feature_neurone = 0.05 #magnitude (proche de 0) des poids des connexions d'un NOUVEAU neurone feature (oeil/oreille/attaque...) ajouté par mutation. Protège l'innovation: le nouveau neurone est quasi-silencieux puis affiné au fil des générations. NON NUL (sinon mutate_weights ne le verrait pas). Le câblage initial du cerveau reste lui en [-1,1]
 nbr_modifications_brain_init = 8
 nbr_mutations_brain = 5
 

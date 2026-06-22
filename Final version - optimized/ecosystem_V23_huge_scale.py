@@ -163,9 +163,13 @@ class Ecosystem:
             eatable_to_add.energy = eatable_parent.energy * variation
             eatable_parent.energy *= (1 - variation)  #on divise l'energie de la plante parent par 2 car a fait un bb et a partagé son énergie
 
-            #position bb plant
-            a = random.uniform(max(0, eatable_parent.position[0] - range_max_spawn_plant), min(taille_carte, eatable_parent.position[0] + range_max_spawn_plant))
-            b = random.uniform(max(0, eatable_parent.position[1] - range_max_spawn_plant), min(taille_carte, eatable_parent.position[1] + range_max_spawn_plant))
+            #position bb plant : dispersion longue distance (position aléatoire) ou près du parent
+            if random.random() < proba_dispersion_plante:
+                a = random.uniform(1, taille_carte - 2)
+                b = random.uniform(1, taille_carte - 2)
+            else:
+                a = random.uniform(max(0, eatable_parent.position[0] - range_max_spawn_plant), min(taille_carte, eatable_parent.position[0] + range_max_spawn_plant))
+                b = random.uniform(max(0, eatable_parent.position[1] - range_max_spawn_plant), min(taille_carte, eatable_parent.position[1] + range_max_spawn_plant))
             eatable_to_add.position = [a, b]
             
             # swap and pop
