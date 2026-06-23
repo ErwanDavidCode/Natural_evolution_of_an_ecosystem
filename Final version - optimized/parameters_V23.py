@@ -36,7 +36,7 @@ load_population = None                                                          
 
 
 #PARAMETRES
-time_to_save_video = 50000 #Si le temps attend cette valeur, on sauvegarde la vidéo et l'historique dans un fichier avec un nom unique. BUT : avoir une save des vidéos et historiques intéressants
+time_to_save_video = 100000 #Si le temps attend cette valeur, on sauvegarde la vidéo et l'historique dans un fichier avec un nom unique. BUT : avoir une save des vidéos et historiques intéressants
 duree_simulation = 20000000 #Can do a Ctrl+C to stop the simulation and still have the video and the history of individuals
 end_time = time.strptime("24 Jun 2024 14:30:00", "%d %b %Y %H:%M:%S") #lancer la simulation jusquà ce temps
 pas_de_temps = 1
@@ -63,7 +63,7 @@ time_to_shuffle = 1000 #temps pour mélanger la liste des individus. Plus il est
 # #initialisation - normal simu -------------------------------------------------------------------------------
 size_modification = 1
 taille_carte = 1500
-max_individu = 100000
+max_individu = 1000
 nbr_individus_init = 100 #100 is good
 max_plantes = 1000
 nbr_plantes_init = 90*size_modification #90*
