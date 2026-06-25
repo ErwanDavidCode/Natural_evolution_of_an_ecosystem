@@ -56,6 +56,11 @@ def diet_normalizer(diet_target, my_diet):
     return (my_diet - diet_target) / lvl_max_eat_scale
 
 
+def age_normalizer(age_entity, max_age):
+    """Normalise entre [0, 1] l'age de l'entité vue (sature à 1 au-delà de max_age). Mimique energy_normalizer."""
+    return min(1.0, age_entity / (max_age + 1e-9))
+
+
 
 def move_energy(x):
     """Fonction pour la perte d'énergie en fonction de la taille"""
@@ -673,6 +678,9 @@ class Body:
                         elif neurone == "know_diet":
                             diet_value = diet_normalizer(entity[0].body.regime if entity_type == "individual" else None, self.regime)
                             vision[base_index + offset + index_vision] = diet_value
+                        elif neurone == "know_age":
+                            age_value = age_normalizer(entity[0].body.age if entity_type == "individual" else entity[0].age, age_maximum)
+                            vision[base_index + offset + index_vision] = age_value
                         
                         index_vision += nbr_neurones_correspondant
 

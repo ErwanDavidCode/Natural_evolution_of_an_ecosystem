@@ -54,8 +54,8 @@ class Metrics:
                             "mean_vision_angle", "mean_rotation", "mean_hearing",
                             "mean_diet", "mean_vision_parts"]
     METRICS_FEATURE_COLUMNS = ["frac_ears", "frac_know_size", "frac_know_diet",
-                               "frac_know_energy", "frac_attack", "frac_spit",
-                               "frac_sound", "frac_birth_ctrl"]
+                               "frac_know_energy", "frac_know_age", "frac_attack",
+                               "frac_spit", "frac_sound", "frac_birth_ctrl"]
 
     # Output file names (attributes so metrics_finalize() can rename them per run).
     METRICS_FILE_POPULATION = "plot_evolution_entities.png"   # same name as the legacy plot
@@ -136,6 +136,7 @@ class Metrics:
             acc["frac_know_size"] += "know_size" in bd.liste_entrees_supplementaires_par_part
             acc["frac_know_diet"] += "know_diet" in bd.liste_entrees_supplementaires_par_part
             acc["frac_know_energy"] += "know_energy" in bd.liste_entrees_supplementaires_par_part
+            acc["frac_know_age"] += "know_age" in bd.liste_entrees_supplementaires_par_part
             acc["frac_attack"] += "attaque" in bd.liste_sorties_supplementaires
             acc["frac_spit"] += "trophallaxy" in bd.liste_sorties_supplementaires
             acc["frac_sound"] += "bouche" in bd.liste_sorties_supplementaires
@@ -488,8 +489,9 @@ class Metrics:
         # (0,1) sensorimotor adoption (fraction of population)
         adoption = [("frac_ears", "ears"), ("frac_know_size", "size-sense"),
                     ("frac_know_diet", "diet-sense"), ("frac_know_energy", "energy-sense"),
-                    ("frac_attack", "attack"), ("frac_spit", "spit"),
-                    ("frac_sound", "sound"), ("frac_birth_ctrl", "birth-control")]
+                    ("frac_know_age", "age-sense"), ("frac_attack", "attack"),
+                    ("frac_spit", "spit"), ("frac_sound", "sound"),
+                    ("frac_birth_ctrl", "birth-control")]
         for col, lbl in adoption:
             axes[0, 1].plot(t, agg[col], label=lbl)
         axes[0, 1].set_title('Sensorimotor adoption')

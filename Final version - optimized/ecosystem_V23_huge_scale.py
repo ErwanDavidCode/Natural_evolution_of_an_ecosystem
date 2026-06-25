@@ -706,6 +706,11 @@ class Ecosystem:
                     if not simulation_seul_param:
                         liste_individus_a_ajouter_a_history.append(individu)
 
+                    # Carcasse de VIEILLESSE: dépose la viande (énergie restante) pour boucher la fuite d'énergie.
+                    # Mimique le drop de viande lors d'un kill. (mort de faim -> énergie ~0; mort en combat -> viande déjà déposée par l'attaquant)
+                    if body.age >= age_maximum:
+                        self.add_eatable("meat", energy=max(0, body.energie), position=(body.position[0], body.position[1]))
+
                 # only considering alive individual for no useless calculations
                 if vivant == True:
                     

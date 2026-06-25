@@ -36,7 +36,7 @@ load_population = None                                                          
 
 
 #PARAMETRES
-time_to_save_video = 100000 #Si le temps attend cette valeur, on sauvegarde la vidéo et l'historique dans un fichier avec un nom unique. BUT : avoir une save des vidéos et historiques intéressants
+time_to_save_video = 200000 #Si le temps attend cette valeur, on sauvegarde la vidéo et l'historique dans un fichier avec un nom unique. BUT : avoir une save des vidéos et historiques intéressants
 duree_simulation = 20000000 #Can do a Ctrl+C to stop the simulation and still have the video and the history of individuals
 end_time = time.strptime("24 Jun 2024 14:30:00", "%d %b %Y %H:%M:%S") #lancer la simulation jusquà ce temps
 pas_de_temps = 1
@@ -110,7 +110,7 @@ seuil_creer_bb = 0 #seuil de sortie neurone pour creer un bb si il a le neurone 
 seuil_trophallaxie = 0.01 #seuil pour trophallaxie
 #Attack individu
 max_attack_damage = 100 
-max_energie_depensee_attack = 0.15 # ex: 0.1 => lot of pple were constantly attacking
+max_energie_depensee_attack = 0.14 # ex: 0.1 => lot of pple were constantly attacking
 seuil_attaque = 0.01 #seuil pour attaquer
 compteur_injured = 20 # number of ticks an individual is slowed down after being hit
 facteur_slowed_down = 0.2 # facteur slowed down multiplicatif vitesse & angle. 1=pas de ralentissement
@@ -120,7 +120,7 @@ facteur_multiplicatif_deplacement_init = 2/size_modification #SIZE MODIFCATION
 #hit box
 r_collision_box_individu_init = 2/size_modification #range to collide with other individuals. Cannot mute, just depends on the size of the individual. C'est ce qui permet d'infliger +/- de dégats #SIZE MODIFCATION
 r_eat_box_individu_init = r_collision_box_individu_init * 3 #range to eat
-r_attack_box_individu_init = r_collision_box_individu_init * 20 #range to attack
+r_attack_box_individu_init = r_collision_box_individu_init * 25 #range to attack
 
 r_hit_box_eatable_init = 1 #size of the plant. Peut avoir des tailles différentes pour les steak et trophallaxie fonction de la taille de l'individu. Doit etre de la meme taille que r_hit_box_individu a l'initialisation ? #SIZE MODIFCATION
 
@@ -205,7 +205,7 @@ nbr_sorties_init = nbr_neurones_de_base_sortie + nbr_neurones_sorties_supplement
 #Liste des neurones ajoutables, les renseigner ici pour avoir le nbr de modifs possible, mais aussi coder les méthodes asocié dans "body" vision ou "process_additional_outputs"
 #Pas besoin de voir sa taille car vision_normalizer se décale en fonction de ma taille (toujours 0 pour un indvidu de ma taille et négatif pour les plus petits et positif pour les plus grands)
 liste_entrees_supplementaires_possibles_init = {"is_giving_birth" : 1, "oreille" : 3, "vie" : 1} # "regime" : 1, "is_stomach_full" : 1} #liste des entrees possiblement ajouter à l'avenir. FORMAT : {"nom_entree_supplementaire" : nbr de neurones correspondant}
-liste_entrees_supplementaires_possibles_par_part_init = {"know_size" : 1, "know_diet" : 1, "know_energy" : 1} #Pour l'instant : ne marche qu'avec des neurones de taille 1 ???????????????????????????????????????
+liste_entrees_supplementaires_possibles_par_part_init = {"know_size" : 1, "know_diet" : 1, "know_energy" : 1, "know_age" : 1} #Pour l'instant : ne marche qu'avec des neurones de taille 1 ???????????????????????????????????????
 liste_sorties_supplementaires_possibles_init = {"trophallaxy" : 1, "bouche" : 2, "creer_bb" : 1} #liste des sorties possiblement ajouter à l'avenir. FORMAT : {"nom_entree_supplementaire" : nbr de neurones correspondant}
 
 
