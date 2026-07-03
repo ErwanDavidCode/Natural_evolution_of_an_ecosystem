@@ -7,3 +7,4 @@ Videos/*
 !Videos/.gitkeep
 Final version - optimized/data/*
 !Final version - optimized/data/.gitkeep
+.claude/settings.json

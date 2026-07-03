@@ -757,7 +757,7 @@ class Body:
             if closest_entity[0].body.vie <= 0 and not was_dead:
                 closest_entity_body = closest_entity[0].body
                 # lay meat on the ground when die*
-                energy = max(0, closest_entity_body.energie)
+                energy = max(0, closest_entity_body.energie) + max(0, closest_entity_body.seed_bank) # + seed_bank: sinon l'énergie de zoochorie stockée disparait à la mort
                 ecosystem_obj.add_eatable("meat", energy=energy, position=(closest_entity[0].body.position[0], closest_entity[0].body.position[1])) #mangeable en fonction de la diet
                 self.compteur_kill += 1
 

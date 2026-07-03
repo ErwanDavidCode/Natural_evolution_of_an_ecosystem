@@ -77,6 +77,8 @@ energy_plant_bb = 60 #energy pour que la plante fasse un bébé et DIVISEE PAR 2
 age_eatable_perish = 5000 #age pour qu'un eatble pourisse et disparaisse
 range_max_spawn_plant = 250/size_modification #range max pour qu'une plante créer un bébé autour d'elle #SIZE MODIFCATION
 proba_dispersion_plante = 0.2 #proba qu'un bébé plante apparaisse à une position ALEATOIRE sur la carte (dispersion longue distance) plutôt que près du parent. 0 = comportement d'origine (toujours près du parent). L'énergie reste partagée avec le parent (conservée)
+energy_per_decomposed_plant = 15 #DECOMPOSITION: quand un perissable (viande, trophallaxie, plante) meurt de vieillesse, son énergie est recyclée en plantes (energie MAX par plante = cette valeur) au lieu d'etre perdue. On crée autant de plantes "pleines" que possible + une plante pour le reste. Energie conservée (la somme des bébés plantes = energie du défunt)
+range_decomposition = 5 #rayon (unités carte) autour du perissable mort dans lequel apparaissent les plantes de décomposition
 #bouffe_taille_max = 2/size_modification #taille max d'un steak ou trophallaxie sans etre dé-doublé lors de son spawn #SIZE MODIFCATION
 #Attention, en plus des plant min, une seed de plante apparait tous les 2000 itérations
 

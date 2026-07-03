@@ -229,8 +229,29 @@ class Ecosystem:
         #ajout à la liste des plantes pour la gestion des enfants uniquement
         if eatable_type == "plant":
             functions.sp_add(self.liste_plantes, self.idx_plantes, entry)
-            
-        
+
+
+
+    def decompose_perishable(self, eatable):
+        """DECOMPOSITION: recycle l'énergie d'un perissable mort de VIEILLESSE (viande, trophallaxie ou
+        plante) en plantes, au lieu de la perdre. Chaque plante porte au MAXIMUM energy_per_decomposed_plant:
+        on crée autant de plantes "pleines" que possible, puis une derniere plante pour l'énergie restante.
+        La somme des bébés plantes vaut exactement energy (conservation). Elles apparaissent dans un petit
+        cercle (range_decomposition) autour du défunt (la branche 'position' de add_eatable les replace dans
+        la carte et les enregistre comme plantes)."""
+        energy = max(0.0, eatable[0].energy)
+        if energy <= 0:
+            return
+        # liste des énergies: des plantes pleines (energy_per_decomposed_plant) + le reste éventuel
+        energies = [energy_per_decomposed_plant] * int(energy // energy_per_decomposed_plant)
+        reste = energy - sum(energies)
+        if reste > 0:
+            energies.append(reste)
+        x0, y0 = eatable[0].position[0], eatable[0].position[1]
+        for energy_plante in energies:
+            x = x0 + random.uniform(-range_decomposition, range_decomposition)
+            y = y0 + random.uniform(-range_decomposition, range_decomposition)
+            self.add_eatable("plant", energy=energy_plante, position=(x, y))
 
 
     def generate_individu_init(self, liste_individus_selectionnes, matrice_poids = None, biais_neurones = None):
@@ -709,7 +730,8 @@ class Ecosystem:
                     # Carcasse de VIEILLESSE: dépose la viande (énergie restante) pour boucher la fuite d'énergie.
                     # Mimique le drop de viande lors d'un kill. (mort de faim -> énergie ~0; mort en combat -> viande déjà déposée par l'attaquant)
                     if body.age >= age_maximum:
-                        self.add_eatable("meat", energy=max(0, body.energie), position=(body.position[0], body.position[1]))
+                        # + seed_bank: l'énergie de zoochorie stockée (prélevée sur des plantes vivantes) est rendue au corps, sinon elle disparait
+                        self.add_eatable("meat", energy=max(0, body.energie) + max(0, body.seed_bank), position=(body.position[0], body.position[1]))
 
                 # only considering alive individual for no useless calculations
                 if vivant == True:
@@ -914,8 +936,9 @@ class Ecosystem:
                     # count
                     self.nbr_par_classes[classes[eatable[1]]] += 1 
                 
-                # deleting
+                # deleting (décomposition: l'énergie d'une plante morte de vieillesse est recyclée en plantes)
                 for eatable in to_remove_plants:
+                    self.decompose_perishable(eatable)
                     self.delete_plant(eatable)
                         
 
@@ -941,8 +964,10 @@ class Ecosystem:
                 # count
                 self.nbr_par_classes[classes[perishable[1]]] += 1 
                     
-            # deleting 
+            # deleting
             for perishable in to_remove_perish:
+                # décomposition: l'énergie d'une viande/trophallaxie pourrie est recyclée en plantes (conservée)
+                self.decompose_perishable(perishable)
                 # remove des listes (swap&pop)
                 functions.sp_remove(self.liste_perishables, self.idx_perishables, perishable)
                 functions.sp_remove(self.liste_eatable, self.idx_eatable, perishable)
