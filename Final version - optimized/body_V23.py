@@ -90,6 +90,8 @@ class Body:
         self.vision_nbr_parts = vision_nbr_parts_init
         self.max_rotation = max_rotation_init
 
+        self.max_size = r_collision_box_individu_init #GENE: adult-size cap. The ONLY heritable size quantity (mutated by mutate_size). Current size grows toward it over life
+
         self.nbr_neurones_entrees_supplementaires = nbr_neurones_entrees_supplementaires_init
         self.nbr_neurones_sorties_supplementaires = nbr_neurones_sorties_supplementaires_init
 
@@ -120,6 +122,10 @@ class Body:
 
     def initialize_individu(self):
         """Initialize the individual with the initial values of the attributes of the body. Used for relaunching the simulation with them"""
+        # reserve = locked body/size. Start at baseline size (one-time seed for the initial population; babies override this in create_bb)
+        self.reserve = energie_par_taille * r_collision_box_individu_init
+        self.carcass_dropped = False #ensures a death lays exactly one corpse (combat + removal loop guard)
+        self.update_size_from_reserve() #derive boxes / max_energie / max_vie from the reserve before using them below
         self.energie = self.max_energie_individu * 0.6 #pour ne pas creer de bb tout de suite
         self.vie = self.max_vie_individu
         self.age = random.randint(0, 500)
@@ -145,6 +151,50 @@ class Body:
         self.compteur_plant_eaten = 0
         self.compteur_meat_eaten = 0
 
+
+
+    def update_size_from_reserve(self):
+        """Derive current size and every size-dependent quantity from the reserve (single source of truth).
+        size = reserve / k; boxes, max_energie and max_vie stay proportional to their initial values.
+        Written ONLY here, so these never drift from the reserve."""
+        size = self.reserve / energie_par_taille
+        ratio = size / r_collision_box_individu_init #1 at baseline size
+        self.r_collision_box_individu = size
+        self.r_eat_box_individu = r_eat_box_individu_init * ratio
+        self.r_attack_box_individu = r_attack_box_individu_init * ratio
+        self.max_energie_individu = max_energie_individu_init * ratio
+        self.max_vie_individu = max_vie_individu_init * ratio
+
+
+    def grow(self):
+        """Growth: convert a fraction of the fuel into reserve (= body size), up to the genetic cap max_size.
+        Only when well-fed (fuel > seuil_croissance * max_energie); hunger just stalls growth, never kills.
+        Energy conserved: it is only an internal fuel -> reserve transfer."""
+        reserve_max = energie_par_taille * self.max_size
+        if self.reserve >= reserve_max or self.energie <= seuil_croissance * self.max_energie_individu:
+            return
+        transfer = min(growth_pace * self.energie, reserve_max - self.reserve) #never overshoot the cap
+        self.energie -= transfer
+        self.reserve += transfer
+        self.update_size_from_reserve()
+
+
+    def birth_reserve_fuel(self):
+        """Cost of ONE baby, all paid from the parent's fuel (parent reserve is never touched):
+        a starter reserve (its body) = birth_ratio of the parent's current reserve, plus starter fuel
+        proportional to that baby's size. Returns (baby_reserve, baby_fuel)."""
+        baby_reserve = birth_ratio * self.reserve
+        baby_size = baby_reserve / energie_par_taille
+        baby_fuel = 0.6 * max_energie_individu_init * (baby_size / r_collision_box_individu_init) #mirrors the 0.6*max_energie init
+        return baby_reserve, baby_fuel
+
+
+    def compute_nbr_bb(self):
+        """How many babies the parent can FULLY fund (reserve + fuel each), while keeping its own repro-gate fuel floor."""
+        baby_reserve, baby_fuel = self.birth_reserve_fuel()
+        per_baby_cost = baby_reserve + baby_fuel
+        spare_fuel = self.energie - facteur_energie_creer_bb * self.max_energie_individu
+        return int(spare_fuel // per_baby_cost) if per_baby_cost > 0 else 0
 
 
     def mutate_regime(self):
@@ -289,19 +339,12 @@ class Body:
 
 
     def mutate_size(self):
-        """Modifie la taille du corps de l'individu en gardant les meme proportions pour eat, hit et collision box"""
+        """Mutate the GENE max_size (the adult-size cap the individual grows toward). Does NOT touch the
+        current size/boxes: those are derived from the reserve and grow over life (see grow / update_size_from_reserve)."""
         variation = random.uniform(-1, 1)
-        r_collision_box_individu_old = self.r_collision_box_individu
-        # Update the size of the body
-        if self.r_collision_box_individu + variation <= 0.5: #on ne peut pas avoir un rayon négatif (round pour ne pas que cv2 dessine un individu de rayon nul)
+        if self.max_size + variation <= 0.5: #no null/negative adult size
             variation = 0
-        self.r_eat_box_individu += variation
-        self.r_collision_box_individu += variation
-        self.r_attack_box_individu += variation
-        # Update the lvl of energy and amount of life. The bigger an individual is the more energy and life it has
-        rapport = self.r_collision_box_individu/r_collision_box_individu_old # new/old
-        self.max_vie_individu *= rapport
-        self.max_energie_individu *= rapport
+        self.max_size += variation
 
 
     def mutate_speed(self):
@@ -512,18 +555,19 @@ class Body:
                 self.share_ressources(ecosystem_obj, value)
             elif neurone == "bouche" and float(valeurs_sortie_brain[1]) > seuil_bruit: #valeurs_sortie_brain[0] = freq        &&          valeurs_sortie_brain[1] = intensité
                 self.make_noise(valeurs_sortie_brain)
-            elif neurone == "creer_bb" and value > seuil_creer_bb: 
+            elif neurone == "creer_bb" and value > seuil_creer_bb:
                 if self.age > age_min_to_childbirth and self.energie >= facteur_energie_creer_bb*self.max_energie_individu and len(ecosystem_obj.liste_individus) < max_individu and not simulation_seul_param and not self.bb_being_created:
-                    #lance le processus pour creer un bébé si il peut (il faut un certain age et energie pour procréer et il ne doit pas y avoir trop d'individus)
-                    self.bb_being_created = True
-                    self.nbr_bb = 1 + int((self.energie - facteur_energie_creer_bb*self.max_energie_individu) // (facteur_energie_depensee_creer_bb*self.max_energie_individu)) #Nbr max of possible baby to born
-                    #we are slower when creating a bb
-                    self.old_facteur_multiplicatif_deplacement = self.facteur_multiplicatif_deplacement 
-                    self.facteur_multiplicatif_deplacement = 0.6/size_modification
+                    #lance la gestation seulement si on peut financer au moins un bébé complet (reserve + fuel)
+                    nbr_bb = self.compute_nbr_bb()
+                    if nbr_bb >= 1:
+                        self.bb_being_created = True
+                        self.nbr_bb = nbr_bb
+                        #we are slower when creating a bb
+                        self.old_facteur_multiplicatif_deplacement = self.facteur_multiplicatif_deplacement
+                        self.facteur_multiplicatif_deplacement = 0.6/size_modification
                 if self.bb_being_created and self.gestation >= self.duree_gestation and len(ecosystem_obj.liste_individus) < max_individu:
-                    #creer effectivement le bébé si le temps de gestation est fini
-                    self.energie /= (self.nbr_bb + 1) #on divise l'energie par le nombre de bébé + 1 (car le parent)
-                    ecosystem_obj.create_bb(individu, self.nbr_bb, self.energie)
+                    #create_bb débite le fuel du parent (reserve + fuel de chaque bébé): énergie conservée
+                    ecosystem_obj.create_bb(individu, self.nbr_bb)
 
 
     def make_noise(self, valeurs_sortie_brain):
@@ -754,14 +798,16 @@ class Body:
             # Slowing down because injured
             closest_entity[0].body.compteur_injured = compteur_injured
 
-            if closest_entity[0].body.vie <= 0 and not was_dead:
+            if closest_entity[0].body.vie <= 0 and not was_dead and not closest_entity[0].body.carcass_dropped:
                 closest_entity_body = closest_entity[0].body
-                # lay meat on the ground when die*
-                energy = max(0, closest_entity_body.energie) + max(0, closest_entity_body.seed_bank) # + seed_bank: sinon l'énergie de zoochorie stockée disparait à la mort
+                # lay meat on death: reserve (the body) + leftover fuel + banked seeds. Fuel may be NEGATIVE
+                # (starvation over-spends it) -> keep it raw so we don't re-create energy; floor the whole corpse at 0.
+                energy = max(0.0, closest_entity_body.reserve + closest_entity_body.energie + closest_entity_body.seed_bank)
+                closest_entity_body.carcass_dropped = True #removal loop must not drop a second corpse
                 ecosystem_obj.add_eatable("meat", energy=energy, position=(closest_entity[0].body.position[0], closest_entity[0].body.position[1])) #mangeable en fonction de la diet
                 self.compteur_kill += 1
 
-        self.energie -= max_energie_depensee_attack * valeur_sortie_brain # Coût de l'attaque
+        self.energie -= max_energie_depensee_attack * valeur_sortie_brain * (self.r_collision_box_individu/r_collision_box_individu_init) # Coût de l'attaque: plus gros = plus cher
 
 
     def share_ressources(self, ecosystem_obj, valeurs_sortie_brain):

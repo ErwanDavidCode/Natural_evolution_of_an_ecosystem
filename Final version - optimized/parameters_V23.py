@@ -36,7 +36,7 @@ load_population = None                                                          
 
 
 #PARAMETRES
-time_to_save_video = 200000 #Si le temps attend cette valeur, on sauvegarde la vidéo et l'historique dans un fichier avec un nom unique. BUT : avoir une save des vidéos et historiques intéressants
+time_to_save_video = 100000 #Si le temps attend cette valeur, on sauvegarde la vidéo et l'historique dans un fichier avec un nom unique. BUT : avoir une save des vidéos et historiques intéressants
 duree_simulation = 20000000 #Can do a Ctrl+C to stop the simulation and still have the video and the history of individuals
 end_time = time.strptime("24 Jun 2024 14:30:00", "%d %b %Y %H:%M:%S") #lancer la simulation jusquà ce temps
 pas_de_temps = 1
@@ -62,28 +62,28 @@ time_to_shuffle = 1000 #temps pour mélanger la liste des individus. Plus il est
 
 # #initialisation - normal simu -------------------------------------------------------------------------------
 size_modification = 1
-taille_carte = 1500
-max_individu = 1000
-nbr_individus_init = 100 #100 is good
-max_plantes = 1000
-nbr_plantes_init = 90*size_modification #90*
-nbr_min_plant_init = 9*size_modification #nombre de nouvelle graine quand plus de plante du tout
+taille_carte = 2000
+max_individu = 500
+nbr_individus_init = 120 #100 is good
+max_plantes = 500
+nbr_plantes_init = 70*size_modification
+nbr_min_plant_init = 6*size_modification #nombre de nouvelle graine quand plus de plante du tout
 nbr_min_plant_final = 1 #plancher de plantes CONSTANT (pas de décroissance). Mettre < nbr_min_plant_init pour réactiver une décroissance vers cette valeur
 
 
 #paramètres plantes
 age_plant_max = 4000 #age pour qu'une plante meurt
 energy_plant_bb = 60 #energy pour que la plante fasse un bébé et DIVISEE PAR 2 son énergie. C'est donc l'energie max apportée a un individu quand il mange une plante par conservation de l'énergie #SIZE MODIFCATION
-age_eatable_perish = 5000 #age pour qu'un eatble pourisse et disparaisse
+age_eatable_perish = 2000 #age pour qu'un eatble pourisse et disparaisse
 range_max_spawn_plant = 250/size_modification #range max pour qu'une plante créer un bébé autour d'elle #SIZE MODIFCATION
-proba_dispersion_plante = 0.2 #proba qu'un bébé plante apparaisse à une position ALEATOIRE sur la carte (dispersion longue distance) plutôt que près du parent. 0 = comportement d'origine (toujours près du parent). L'énergie reste partagée avec le parent (conservée)
-energy_per_decomposed_plant = 15 #DECOMPOSITION: quand un perissable (viande, trophallaxie, plante) meurt de vieillesse, son énergie est recyclée en plantes (energie MAX par plante = cette valeur) au lieu d'etre perdue. On crée autant de plantes "pleines" que possible + une plante pour le reste. Energie conservée (la somme des bébés plantes = energie du défunt)
+proba_dispersion_plante = 0.15 #proba qu'un bébé plante apparaisse à une position ALEATOIRE sur la carte (dispersion longue distance) plutôt que près du parent. 0 = comportement d'origine (toujours près du parent). L'énergie reste partagée avec le parent (conservée)
+energy_per_decomposed_plant = 50 #DECOMPOSITION: quand un perissable (viande, trophallaxie, plante) meurt de vieillesse, son énergie est recyclée en plantes (energie MAX par plante = cette valeur) au lieu d'etre perdue. On crée autant de plantes "pleines" que possible + une plante pour le reste. Energie conservée (la somme des bébés plantes = energie du défunt)
 range_decomposition = 5 #rayon (unités carte) autour du perissable mort dans lequel apparaissent les plantes de décomposition
 #bouffe_taille_max = 2/size_modification #taille max d'un steak ou trophallaxie sans etre dé-doublé lors de son spawn #SIZE MODIFCATION
 #Attention, en plus des plant min, une seed de plante apparait tous les 2000 itérations
 
 #Energie
-solar_energy = np.sqrt(taille_carte)/11 #Energie solaire par pas de temps, sert a faire pousser les plantes
+solar_energy = np.sqrt(taille_carte)/15 #Energie solaire par pas de temps, sert a faire pousser les plantes
 gain_max_energy_per_turn = 0.1 #max gain of energy per turn for a plant
 print(f"BB_PLANTE tous les : {np.ceil(energy_plant_bb/(solar_energy/nbr_plantes_init)/2)} turns pour NBR_PLANT = {nbr_plantes_init}")
 print(f"Min duration to create BB_PLANT : {np.ceil(energy_plant_bb/gain_max_energy_per_turn/2)} turns")
@@ -92,8 +92,14 @@ age_maximum = 5000
 # Les individus commeneent avec une énergie/2 et une vie de 100
 max_energie_individu_init = 150 
 max_vie_individu_init = 200 
-age_min_to_attack = 20 
+age_min_to_attack = 20
 age_min_to_childbirth = 20
+
+#DUAL ENERGY: fuel (body.energie, spendable) + reserve (body.reserve, locked structural mass = the body). size = reserve / energie_par_taille
+energie_par_taille = 40 #k: energy locked per unit of size. reserve = k * size. Sets how costly a body is and how rich its corpse is
+growth_pace = 0.05 #fraction of the fuel converted into reserve each tick (growth). A rate, so growth is asymptotic and slows as the body fills
+seuil_croissance = 0.4 #growth only happens while fuel > this fraction of max_energie. Hungry => growth stalls (never lethal). MUST be < facteur_energie_creer_bb
+birth_ratio = 0.1 #a baby's body (reserve) starts at this fraction of the parent's current size. Paid from the parent's fuel
 #facteur_energie_eat = 0.9 # EN % de l'energie tot. Au dela de ce %tage d'energie, l'individu ne mange plus. Symbolise un estomac de taille fini. Pourquoi pas 100 ? Car l'individu n'a que trs rarement 100% de son energie quand il mange car il perd de l'energie en bougeant (notamment en bougeant vers un eatable)
 
 # Zoochrorie parametres
@@ -106,7 +112,6 @@ seed_bank_max = 20.0  # énergie max stockée sous forme de graines
 
 #create bb
 facteur_energie_creer_bb = 0.61 # EN % de l'energie tot. Required energy to create a baby, doit etre supérieur a energie_init. Plus un individu est gros plus il a besoin d"energie pour creer BB.
-facteur_energie_depensee_creer_bb = 0.31 # EN % de l'energie tot. Energie perdu quand on enfante, 1 enfants max 
 seuil_creer_bb = 0 #seuil de sortie neurone pour creer un bb si il a le neurone de sortie "creer_bb"
 #eat trophallaxie
 seuil_trophallaxie = 0.01 #seuil pour trophallaxie

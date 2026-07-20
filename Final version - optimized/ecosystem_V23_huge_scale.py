@@ -249,6 +249,8 @@ class Ecosystem:
             energies.append(reste)
         x0, y0 = eatable[0].position[0], eatable[0].position[1]
         for energy_plante in energies:
+            if len(self.liste_plantes) >= max_plantes: #HARD CAP (god rule, comme max_individu): au plafond on ne fait PAS apparaitre la plante. L'énergie non recyclée est un puits assumé (perf > conservation stricte au plafond)
+                break
             x = x0 + random.uniform(-range_decomposition, range_decomposition)
             y = y0 + random.uniform(-range_decomposition, range_decomposition)
             self.add_eatable("plant", energy=energy_plante, position=(x, y))
@@ -608,8 +610,10 @@ class Ecosystem:
 
 
 
-    def create_bb(self, individu, nbr_bb, energie_parent):
-        """Crée un BB à partir d'un individu"""
+    def create_bb(self, individu, nbr_bb):
+        """Create nbr_bb babies from a parent. The parent pays each baby's reserve (its body) + starter fuel
+        out of its OWN FUEL (its reserve is never touched) -> energy is conserved. The baby is born small and
+        grows over life toward its inherited max_size gene."""
         body = individu.body
 
         # RESET DES VALEURS
@@ -617,6 +621,17 @@ class Ecosystem:
         body.gestation = 0 #reset the gestation timer
         body.facteur_multiplicatif_deplacement = body.old_facteur_multiplicatif_deplacement #we reset the facteur multiplicatif deplacement to the old one
         body.nbr_bb = 0 #reset the number of BB
+
+        # Per-baby cost from the parent's CURRENT state (fuel changed during gestation), then clamp to what is
+        # actually affordable now so the parent's fuel can never go negative (strict conservation).
+        baby_reserve, baby_fuel = body.birth_reserve_fuel()
+        per_baby_cost = baby_reserve + baby_fuel
+        if per_baby_cost <= 0:
+            return
+        nbr_bb = min(nbr_bb, int(body.energie // per_baby_cost))
+        if nbr_bb < 1:
+            return
+        body.energie -= nbr_bb * per_baby_cost #parent pays from fuel only
 
         for _ in range(nbr_bb):
             self.compteur_BB += 1
@@ -629,8 +644,12 @@ class Ecosystem:
             self.ID_BB += 1 #on incrémente l'ID pour le prochain BB
             #modifications génétiques body
             body_bb.mutate_body(brain_bb)
-            body_bb.initialize_individu() #on initialise le BB apres pour lui donner sa vie et energie de départ ( = f(son seuil max)) si mutations physiques de taille il y a eu
-            body_bb.energie = energie_parent #le bébé a recu l'énergie du parent divisé par le nbr d'enfant
+            body_bb.initialize_individu() #reset l'état (age, gestation ...) et donne une taille de base
+            # override with the paid-for starter body: reserve and fuel come straight from the parent's fuel
+            body_bb.reserve = baby_reserve
+            body_bb.energie = baby_fuel
+            body_bb.update_size_from_reserve() #boxes/max_energie/max_vie reflect the baby's (small) size
+            body_bb.vie = body_bb.max_vie_individu
             #modifications génétiques brain
             brain_bb.mutate_brain()
             brain_bb.mutate_probas()
@@ -644,7 +663,7 @@ class Ecosystem:
             # Ajouter dans la liste du quadtree l'individu et à la liste des individus
             #self.liste_individus.append(bb)
             functions.sp_add(self.liste_individus, self.idx_individus, bb)
-            
+
             bbox = (body_bb.position[0] - body_bb.r_collision_box_individu, body_bb.position[1] - body_bb.r_collision_box_individu, body_bb.position[0] + body_bb.r_collision_box_individu, body_bb.position[1] + body_bb.r_collision_box_individu)
             self.quadtree.insert(item=(bb,"individual"), bbox=bbox)
             
@@ -727,11 +746,12 @@ class Ecosystem:
                     if not simulation_seul_param:
                         liste_individus_a_ajouter_a_history.append(individu)
 
-                    # Carcasse de VIEILLESSE: dépose la viande (énergie restante) pour boucher la fuite d'énergie.
-                    # Mimique le drop de viande lors d'un kill. (mort de faim -> énergie ~0; mort en combat -> viande déjà déposée par l'attaquant)
-                    if body.age >= age_maximum:
-                        # + seed_bank: l'énergie de zoochorie stockée (prélevée sur des plantes vivantes) est rendue au corps, sinon elle disparait
-                        self.add_eatable("meat", energy=max(0, body.energie) + max(0, body.seed_bank), position=(body.position[0], body.position[1]))
+                    # Corpse on ANY death (age OR starvation): reserve (the body) + leftover fuel + banked seeds.
+                    # Fuel may be NEGATIVE (starvation over-spends it) -> keep it raw so death doesn't re-create energy;
+                    # floor the whole corpse at 0. carcass_dropped guards against a double corpse if killed in combat this tick.
+                    if not body.carcass_dropped:
+                        body.carcass_dropped = True
+                        self.add_eatable("meat", energy=max(0.0, body.reserve + body.energie + body.seed_bank), position=(body.position[0], body.position[1]))
 
                 # only considering alive individual for no useless calculations
                 if vivant == True:
@@ -829,16 +849,17 @@ class Ecosystem:
                         body.gestation += 1 # Temps pour enfanter avance
                     # NEW BABY (one at the time)
                     if body.age > age_min_to_childbirth and body.energie >= facteur_energie_creer_bb*body.max_energie_individu and len(self.liste_individus) < max_individu and not simulation_seul_param and not "creer_bb" in body.liste_sorties_supplementaires and not body.bb_being_created:
-                        #lance le processus pour creer un bébé si il peut (il faut un certain age et energie pour procréer et il ne doit pas y avoir trop d'individus)
-                        body.bb_being_created = True
-                        body.nbr_bb = 1 + int((body.energie - facteur_energie_creer_bb*body.max_energie_individu) // (facteur_energie_depensee_creer_bb*body.max_energie_individu)) #Nbr max of possible baby to born
-                        #we are slower when creating a bb
-                        body.old_facteur_multiplicatif_deplacement = body.facteur_multiplicatif_deplacement 
-                        body.facteur_multiplicatif_deplacement = 0.6/size_modification
+                        #lance la gestation seulement si on peut financer au moins un bébé complet (reserve + fuel)
+                        nbr_bb = body.compute_nbr_bb()
+                        if nbr_bb >= 1:
+                            body.bb_being_created = True
+                            body.nbr_bb = nbr_bb
+                            #we are slower when creating a bb
+                            body.old_facteur_multiplicatif_deplacement = body.facteur_multiplicatif_deplacement
+                            body.facteur_multiplicatif_deplacement = 0.6/size_modification
                     if body.bb_being_created and body.gestation >= body.duree_gestation and len(self.liste_individus) < max_individu:
-                        #creer effectivement le bébé si le temps de gestation est fini
-                        body.energie /= (body.nbr_bb + 1) #on divise l'energie par le nombre de bébé + 1 (car le parent)
-                        self.create_bb(individu, body.nbr_bb, body.energie)
+                        #create_bb débite le fuel du parent (reserve + fuel de chaque bébé): énergie conservée
+                        self.create_bb(individu, body.nbr_bb)
                         
 
 
@@ -865,7 +886,10 @@ class Ecosystem:
                     nvl_position = self.deplacement_dynamique(nvl_position_x, nvl_position_y, individu)  
                     # Retirer de la liste du quadtree l'individu
                     bbox = (body.position[0] - body.r_collision_box_individu, body.position[1] - body.r_collision_box_individu, body.position[0] + body.r_collision_box_individu, body.position[1] + body.r_collision_box_individu)
-                    self.quadtree.remove(item=(individu,"individual"), bbox=bbox)     
+                    self.quadtree.remove(item=(individu,"individual"), bbox=bbox)
+                    # GROWTH: grow here (between the paired remove/insert) so the size change rides the insert
+                    # already happening -> quadtree stays consistent, no extra quadtree operation
+                    body.grow()
                     # Ajouter de la liste du quadtree l'individu
                     bbox = (nvl_position[0] - body.r_collision_box_individu, nvl_position[1] - body.r_collision_box_individu, nvl_position[0] + body.r_collision_box_individu, nvl_position[1] + body.r_collision_box_individu)
                     self.quadtree.insert(item=(individu,"individual"), bbox=bbox) #on l'ajoute dans la liste du quadtree
@@ -873,7 +897,7 @@ class Ecosystem:
                     body.position = [nvl_position[0], nvl_position[1]]
 
                     # ZOOCHORIE
-                    if body.seed_bank >= seed_energy and random.random() < seed_drop_prob:
+                    if body.seed_bank >= seed_energy and random.random() < seed_drop_prob and len(self.liste_plantes) < max_plantes: #len < max_plantes: HARD CAP (god rule, comme max_individu). Au plafond -> pas de graine ET seed_bank conservé (pas de perte), la graine sortira plus tard
                         x = body.position[0] - (2 + r_hit_box_eatable_init + body.r_eat_box_individu) * math.cos(math.radians(body.teta))
                         y = body.position[1] - (2 + r_hit_box_eatable_init + body.r_eat_box_individu) * math.sin(math.radians(body.teta))
                         self.add_eatable("plant", energy=seed_energy, position=(x, y))
