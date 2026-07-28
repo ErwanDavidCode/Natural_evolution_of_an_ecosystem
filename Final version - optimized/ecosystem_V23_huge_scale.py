@@ -273,6 +273,7 @@ class Ecosystem:
 
                     individu.ID = num_individu #cet ID permet d'identifier chaque individu
                     body.mutate_body_init() #on mute les caractéristiques du body (toutes ont une chance sauf les mutations features : neurones d'entrées et de sorties)
+                    body.regime = random.randint(0, lvl_max_eat_scale) #FOUNDERS span herbivore..carnivore so the predator niche exists at t=0 (diversity, not scripted behavior). Babies still INHERIT their parent's regime (create_bb), so this only seeds the initial population
                     body.initialize_individu() #on initialise l'individu apres pour lui donner sa vie et energie de départ ( = f(son seuil max)) si mutations physiques de taille il y a eu
                     individu.brain.mutate_brain()
 
@@ -581,32 +582,24 @@ class Ecosystem:
   
 
     def eat_energy_plant(self, x, energy):
-        """Fonction qui renvoie la quantité d'énergie/vie que l'individu gagne en mangeant une plante. Varie entre 0 et maximum et vaut "(energie_manger_plante/2) * facteur_mult_taille" au milieu. LINEAIRE"""
+        """Énergie assimilée en mangeant une plante. régime x=0 (herbivore) = max d'efficacité; diet_specialization règle la pente, plant_digest_efficiency la richesse de la plante."""
         energy = max(0, energy)
         if lvl_max_eat_scale == 0:
-            return energy
-        else:
-            return (1 - x / lvl_max_eat_scale) * energy
+            return energy * plant_digest_efficiency
+        return (1 - diet_specialization * x / lvl_max_eat_scale) * energy * plant_digest_efficiency
 
 
     def eat_energy_meat(self, x, energy):
-        """Fonction qui renvoie la quantité d'énergie/vie que l'individu gagne en mangeant une viande. Varie entre 0 et maximum et vaut "(energie_manger_meat/2) * facteur_mult_taille" au milieu. LINEAIRE"""
+        """Énergie assimilée en mangeant de la viande. régime x=max (carnivore) = max d'efficacité; diet_specialization règle la pente, meat_digest_efficiency la richesse de la viande."""
         energy = max(0, energy)
         if lvl_max_eat_scale == 0:
-            return energy
-        else:
-            return (x / lvl_max_eat_scale) * energy
+            return energy * meat_digest_efficiency
+        return (1 - diet_specialization * (lvl_max_eat_scale - x) / lvl_max_eat_scale) * energy * meat_digest_efficiency
 
 
     def can_eat(self, regime, eatable_type):
-        # regime: 0 = herbivore, lvl_max_eat_scale = carnivore (les autres = omnivores)
-        if lvl_max_eat_scale == 0:
-            return True
-        if eatable_type == "plant":
-            return regime < lvl_max_eat_scale
-        if eatable_type == "meat":
-            return regime > 0
-        return True  # trophallaxy
+        # Tout le monde peut manger plante/viande/trophallaxie: le régime ne règle QUE l'efficacité (eat_energy_*), pas l'accès. La spécialisation reste rentable via l'efficacité
+        return True
 
 
 

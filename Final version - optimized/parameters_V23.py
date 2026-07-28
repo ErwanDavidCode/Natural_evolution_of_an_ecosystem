@@ -62,11 +62,11 @@ time_to_shuffle = 1000 #temps pour mélanger la liste des individus. Plus il est
 
 # #initialisation - normal simu -------------------------------------------------------------------------------
 size_modification = 1
-taille_carte = 2000
+taille_carte = 1800
 max_individu = 500
 nbr_individus_init = 120 #100 is good
 max_plantes = 500
-nbr_plantes_init = 70*size_modification
+nbr_plantes_init = 100*size_modification
 nbr_min_plant_init = 6*size_modification #nombre de nouvelle graine quand plus de plante du tout
 nbr_min_plant_final = 1 #plancher de plantes CONSTANT (pas de décroissance). Mettre < nbr_min_plant_init pour réactiver une décroissance vers cette valeur
 
@@ -83,7 +83,7 @@ range_decomposition = 5 #rayon (unités carte) autour du perissable mort dans le
 #Attention, en plus des plant min, une seed de plante apparait tous les 2000 itérations
 
 #Energie
-solar_energy = np.sqrt(taille_carte)/15 #Energie solaire par pas de temps, sert a faire pousser les plantes
+solar_energy = np.sqrt(taille_carte)/20 #Energie solaire par pas de temps, sert a faire pousser les plantes
 gain_max_energy_per_turn = 0.1 #max gain of energy per turn for a plant
 print(f"BB_PLANTE tous les : {np.ceil(energy_plant_bb/(solar_energy/nbr_plantes_init)/2)} turns pour NBR_PLANT = {nbr_plantes_init}")
 print(f"Min duration to create BB_PLANT : {np.ceil(energy_plant_bb/gain_max_energy_per_turn/2)} turns")
@@ -111,7 +111,7 @@ seed_bank_max = 20.0  # énergie max stockée sous forme de graines
 
 
 #create bb
-facteur_energie_creer_bb = 0.61 # EN % de l'energie tot. Required energy to create a baby, doit etre supérieur a energie_init. Plus un individu est gros plus il a besoin d"energie pour creer BB.
+facteur_energie_creer_bb = 0.5 # EN % de l'energie tot. Required energy to create a baby, doit etre supérieur a energie_init. Plus un individu est gros plus il a besoin d"energie pour creer BB.
 seuil_creer_bb = 0 #seuil de sortie neurone pour creer un bb si il a le neurone de sortie "creer_bb"
 #eat trophallaxie
 seuil_trophallaxie = 0.01 #seuil pour trophallaxie
@@ -142,7 +142,12 @@ seuil_bruit = 0 #doit etre supérieure à 0
 
 
 # Avoir des régime est complexe car on commence avec un régime omnivore qui nous %2 les gains de tout type de nouriture.
-lvl_max_eat_scale = 6 #Vaut 0: tout le monde mange viande ou plante avec la meme energie et vie. Ou vaut >0: si on veut plus de diversité. ATTENTION : dans le cas >0, les extremes ne peuvent manger que plantes ou viandes. Spawn en //2 (au milieu)
+lvl_max_eat_scale = 4 #Vaut 0: tout le monde mange viande ou plante avec la meme energie et vie. Ou vaut >0: si on veut plus de diversité. ATTENTION : dans le cas >0, les extremes ne peuvent manger que plantes ou viandes. Spawn en //2 (au milieu)
+
+#TROPHIC EFFICIENCY (puits de chaleur, énergie CONSERVÉE): l'herbivorie est peu efficace (cellulose), la carnivorie est riche. Rend le chemin omnivore->carnivore RENTABLE et rend le charognage des cadavres accumulés profitable. meat DOIT rester <=1.0 (sinon on assimile plus que ne contient le cadavre => création d'énergie)
+plant_digest_efficiency = 0.9 #fraction de l'énergie d'une plante réellement assimilée; le reste part en chaleur
+meat_digest_efficiency = 1.0 #fraction de l'énergie d'un cadavre assimilée (garder <=1.0 pour la conservation)
+diet_specialization = 0.5 #s dans [0,1]: pente du compromis régime. 0 = omnivore parfait (100% des 2 aliments), 1 = spécialisation stricte (l'extrême ne tire rien de l'autre aliment), 0.5 = intermédiaire
 
 # size of eatable : linear function of the amount of energy it has
 eatable_draw_scale = 0.04  # ajuste: + grand => points plus gros
