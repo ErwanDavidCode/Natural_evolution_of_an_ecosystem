@@ -56,6 +56,13 @@ class Metrics:
     METRICS_FEATURE_COLUMNS = ["frac_ears", "frac_know_size", "frac_know_diet",
                                "frac_know_energy", "frac_know_age", "frac_attack",
                                "frac_spit", "frac_sound", "frac_birth_ctrl"]
+    # REALIZED behaviour (what individuals actually DO), as opposed to what they merely carry.
+    # frac_attacking = firing the attack output THIS tick; the rate_* are per-1000-ticks-of-life.
+    METRICS_BEHAVIOUR_COLUMNS = ["frac_attacking", "rate_kills", "rate_plant_eaten",
+                                 "rate_meat_eaten", "rate_trophallaxy",
+                                 "mean_age", "mean_generation"]
+    # World energy stocks, to check the loop is closed (no leak / no creation) over long runs.
+    METRICS_ENERGY_COLUMNS = ["energy_individuals", "energy_plants", "energy_meat"]
 
     # Output file names (attributes so metrics_finalize() can rename them per run).
     METRICS_FILE_POPULATION = "plot_evolution_entities.png"   # same name as the legacy plot
@@ -64,6 +71,7 @@ class Metrics:
     METRICS_FILE_ADAPTATION = "plot_adaptation.png"
     METRICS_FILE_BRAIN = "plot_brain.png"
     METRICS_FILE_BODY = "plot_body.png"
+    METRICS_FILE_BEHAVIOUR = "plot_behaviour.png"
 
     def __init__(self, active=True):
         """`active` is the master switch (enable_metrics AND a full simulation)."""
@@ -73,7 +81,8 @@ class Metrics:
         self.metrics_diet_columns = [len(classes) + d for d in range(lvl_max_eat_scale + 1)]
         self.metrics_count_columns = self.metrics_class_columns + self.metrics_diet_columns
         self.metrics_agg_columns = (self.METRICS_BRAIN_COLUMNS + self.METRICS_MUTATION_COLUMNS
-                                    + self.METRICS_BODY_COLUMNS + self.METRICS_FEATURE_COLUMNS)
+                                    + self.METRICS_BODY_COLUMNS + self.METRICS_FEATURE_COLUMNS
+                                    + self.METRICS_BEHAVIOUR_COLUMNS + self.METRICS_ENERGY_COLUMNS)
         # In-memory buffers (flushed to CSV every `saving_rate`, reloaded at render time).
         self.metrics_time = []
         self.metrics_counts = {col: [] for col in self.metrics_count_columns}
@@ -84,9 +93,10 @@ class Metrics:
     # =========================================================================
     # COLLECTION  (called every tick during the simulation)
     # =========================================================================
-    def metrics_record_step(self, temps, counts_per_class, population):
+    def metrics_record_step(self, temps, counts_per_class, population, eatables=None):
         """Buffer one sample = per-class/diet head-counts + aggregates over the live
-        population, and periodically flush to CSV. No-op when metrics are disabled."""
+        population, and periodically flush to CSV. No-op when metrics are disabled.
+        `eatables` (optional) is the world's eatable list, used only for the energy budget."""
         if not self.metrics_enabled:
             return
         if temps % sampling_rate == 0:
@@ -94,10 +104,27 @@ class Metrics:
             for col in self.metrics_count_columns:
                 self.metrics_counts[col].append(counts_per_class[col])
             agg = self._metrics_compute_aggregates(population)
+            agg.update(self._metrics_compute_energy(population, eatables))
             for col in self.metrics_agg_columns:
                 self.metrics_agg[col].append(agg[col])
         if temps % saving_rate == 0:
             self._metrics_flush_to_csv()
+
+    def _metrics_compute_energy(self, population, eatables):
+        """Total energy stocked in the world, split by compartment. Individuals carry
+        reserve (their body) + fuel; eatables carry their own energy. Returns nan for the
+        eatable compartments when the list was not passed in."""
+        living = sum(ind.body.reserve + ind.body.energie for ind in population) if population else 0.0
+        if eatables is None:
+            return {"energy_individuals": living, "energy_plants": float('nan'),
+                    "energy_meat": float('nan')}
+        plants = meat = 0.0
+        for entity, type_entity in eatables:
+            if type_entity == "plant":
+                plants += entity.energy
+            else:
+                meat += entity.energy
+        return {"energy_individuals": living, "energy_plants": plants, "energy_meat": meat}
 
     def _metrics_compute_aggregates(self, population):
         """One pass over the live population -> dict of all aggregate columns (means, and
@@ -141,6 +168,15 @@ class Metrics:
             acc["frac_spit"] += "trophallaxy" in bd.liste_sorties_supplementaires
             acc["frac_sound"] += "bouche" in bd.liste_sorties_supplementaires
             acc["frac_birth_ctrl"] += "creer_bb" in bd.liste_sorties_supplementaires
+            # realized behaviour: firing vs merely owning, and lifetime counters as rates
+            acc["frac_attacking"] += bool(bd.attack_bool)
+            ticks_lived = max(bd.age, 1)
+            acc["rate_kills"] += 1000.0 * bd.compteur_kill / ticks_lived
+            acc["rate_plant_eaten"] += 1000.0 * bd.compteur_plant_eaten / ticks_lived
+            acc["rate_meat_eaten"] += 1000.0 * bd.compteur_meat_eaten / ticks_lived
+            acc["rate_trophallaxy"] += 1000.0 * bd.compteur_trophallaxie / ticks_lived
+            acc["mean_age"] += bd.age
+            acc["mean_generation"] += bd.generation
         return {col: acc[col] / n for col in self.metrics_agg_columns}
 
     # =========================================================================
@@ -160,6 +196,7 @@ class Metrics:
         self._metrics_plot_adaptation(data)
         self._metrics_plot_brain(data)
         self._metrics_plot_body(data)
+        self._metrics_plot_behaviour(data)
         self._metrics_print_summary(data)
 
     def metrics_finalize(self, run_id):
@@ -170,7 +207,8 @@ class Metrics:
             return
         for fname in (self.METRICS_FILE_POPULATION, self.METRICS_FILE_PHASE,
                       self.METRICS_FILE_DASHBOARD, self.METRICS_FILE_ADAPTATION,
-                      self.METRICS_FILE_BRAIN, self.METRICS_FILE_BODY):
+                      self.METRICS_FILE_BRAIN, self.METRICS_FILE_BODY,
+                      self.METRICS_FILE_BEHAVIOUR):
             src = os.path.join(self.METRICS_OUTPUT_DIR, fname)
             if os.path.exists(src):
                 stem, ext = os.path.splitext(fname)
@@ -530,6 +568,76 @@ class Metrics:
         plt.close(fig)
 
     # =========================================================================
+    # FIGURE 7 - realized behaviour & energy budget
+    # =========================================================================
+    def _metrics_plot_behaviour(self, data):
+        """Figure 7 - what individuals actually DO (not what they carry); x = time (ticks).
+        (0,0) Attack: OWNERSHIP (fraction carrying the attack output) vs USE (fraction
+              actually firing it this tick). A large gap = the neuron is retained but
+              silenced, i.e. predation is not being selected.
+        (0,1) Predation outcome: kills per 1000 ticks of life. This is the only direct
+              evidence of predation; if it stays at 0 no predator ever established.
+        (1,0) Realized diet: plant meals vs meat meals per 1000 ticks of life, next to the
+              mean diet GENE. The gene says what they could digest, these say what they ate.
+        (1,1) World energy budget: energy stocked in plants + corpses + living bodies.
+              The total should track solar input; a steady downward drift means a leak."""
+        t = data["time"]
+        agg = data["agg"]
+        fig, axes = plt.subplots(2, 2, figsize=(13, 9))
+        fig.suptitle('Realized behaviour & energy budget')
+
+        axes[0, 0].plot(t, agg["frac_attack"], label='owns attack output')
+        axes[0, 0].plot(t, agg["frac_attacking"], label='FIRING attack this tick')
+        axes[0, 0].set_title('Attack: ownership vs actual use')
+        axes[0, 0].set_xlabel('Time')
+        axes[0, 0].set_ylabel('Fraction of population')
+        axes[0, 0].set_ylim(-0.05, 1.05)
+        axes[0, 0].legend(fontsize=8)
+        axes[0, 0].grid(True, alpha=0.3)
+
+        axes[0, 1].plot(t, agg["rate_kills"], color='tab:red')
+        axes[0, 1].set_title('Predation outcome (kills per 1000 ticks of life)')
+        axes[0, 1].set_xlabel('Time')
+        axes[0, 1].set_ylabel('Kills / 1000 ticks')
+        axes[0, 1].grid(True, alpha=0.3)
+
+        axes[1, 0].plot(t, agg["rate_plant_eaten"], color='tab:green', label='plant meals')
+        axes[1, 0].plot(t, agg["rate_meat_eaten"], color='tab:red', label='meat meals')
+        axes[1, 0].plot(t, agg["rate_trophallaxy"], color='tab:orange', label='trophallaxy given')
+        axes[1, 0].set_title('Realized diet (meals per 1000 ticks of life)')
+        axes[1, 0].set_xlabel('Time')
+        axes[1, 0].set_ylabel('Meals / 1000 ticks')
+        twin = axes[1, 0].twinx()
+        twin.plot(t, agg["mean_diet"], color='black', linewidth=0.8, linestyle=':', label='diet gene')
+        twin.set_ylabel('Mean diet gene (0=herb)')
+        twin.set_ylim(0, lvl_max_eat_scale)
+        lines = axes[1, 0].get_lines() + twin.get_lines()
+        axes[1, 0].legend(lines, [l.get_label() for l in lines], fontsize=7)
+        axes[1, 0].grid(True, alpha=0.3)
+
+        plants = np.asarray(agg["energy_plants"], dtype=float)
+        meat = np.asarray(agg["energy_meat"], dtype=float)
+        living = np.asarray(agg["energy_individuals"], dtype=float)
+        if np.any(~np.isnan(plants)):
+            axes[1, 1].plot(t, plants, color='tab:green', label='in plants')
+            axes[1, 1].plot(t, meat, color='tab:red', label='in corpses')
+            axes[1, 1].plot(t, living, color='tab:blue', label='in living bodies')
+            axes[1, 1].plot(t, plants + meat + living, color='black',
+                            linewidth=1.2, label='TOTAL')
+            axes[1, 1].legend(fontsize=7)
+        else:
+            axes[1, 1].text(0.5, 0.5, 'energy budget unavailable\n(eatables not passed in)',
+                            ha='center', va='center')
+        axes[1, 1].set_title('World energy budget (conservation check)')
+        axes[1, 1].set_xlabel('Time')
+        axes[1, 1].set_ylabel('Energy')
+        axes[1, 1].grid(True, alpha=0.3)
+
+        fig.tight_layout(rect=[0, 0, 1, 0.97])
+        fig.savefig(os.path.join(self.METRICS_OUTPUT_DIR, self.METRICS_FILE_BEHAVIOUR))
+        plt.close(fig)
+
+    # =========================================================================
     # Scalar summary (printed to stdout)
     # =========================================================================
     def _metrics_print_summary(self, data):
@@ -555,6 +663,11 @@ class Metrics:
         final_conn = self._metrics_last_valid(data["agg"]["mean_connections"])
         final_alpha = self._metrics_last_valid(data["agg"]["mean_alpha"])
         final_diet = self._metrics_last_valid(data["agg"]["mean_diet"])
+        kills = np.asarray(data["agg"]["rate_kills"], dtype=float)
+        firing = np.asarray(data["agg"]["frac_attacking"], dtype=float)
+        owning = np.asarray(data["agg"]["frac_attack"], dtype=float)
+        meat_rate = np.asarray(data["agg"]["rate_meat_eaten"], dtype=float)
+        plant_rate = np.asarray(data["agg"]["rate_plant_eaten"], dtype=float)
 
         print("\n####################### METRICS SUMMARY #######################     - #metrics")
         print(f"Run survival:                {time_series[-1]} ticks")
@@ -564,6 +677,9 @@ class Metrics:
         print(f"Over-grazing time fraction:  {overgraze_fraction:.2%}")
         print(f"Brain  final conn / alpha:   {final_conn:.1f} / {final_alpha:.3f}")
         print(f"Final mean diet (0=herb):    {final_diet:.2f}")
+        print(f"Attack owned / actually fired: {np.nanmean(owning):.2%} / {np.nanmean(firing):.2%}")
+        print(f"Kills per 1000 ticks (mean): {np.nanmean(kills):.4f}")
+        print(f"Meals/1000t  plant / meat:   {np.nanmean(plant_rate):.2f} / {np.nanmean(meat_rate):.2f}")
         print("###############################################################\n")
 
     # =========================================================================

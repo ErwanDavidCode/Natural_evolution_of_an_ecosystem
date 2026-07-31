@@ -748,7 +748,10 @@ class Ecosystem:
 
                 # only considering alive individual for no useless calculations
                 if vivant == True:
-                    
+
+                    # Metabolisme de base: cout de rester en vie, avant le test de famine
+                    body.basal_metabolism()
+
                     # Gain life each turn according to it's lvl of energy. Full stomach => fast regeneration !
                     body.vie = min(body.max_vie_individu, body.vie + max(0, body.energie) / body.max_energie_individu) #gain de vie proportionnel à l'energie
                     
@@ -1017,7 +1020,7 @@ class Ecosystem:
             self.export_sound()  # Méthode pour exporter le son à chaque itération
 
             # Collecte des données pour le plot (centralized metrics layer; self-gates when disabled)
-            self.metrics.metrics_record_step(temps, self.nbr_par_classes, self.liste_individus)
+            self.metrics.metrics_record_step(temps, self.nbr_par_classes, self.liste_individus, self.liste_eatable)
 
 
         # Ajout des individus à l'historique

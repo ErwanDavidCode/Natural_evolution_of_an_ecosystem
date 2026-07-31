@@ -83,12 +83,12 @@ range_decomposition = 5 #rayon (unités carte) autour du perissable mort dans le
 #Attention, en plus des plant min, une seed de plante apparait tous les 2000 itérations
 
 #Energie
-solar_energy = np.sqrt(taille_carte)/20 #Energie solaire par pas de temps, sert a faire pousser les plantes
+solar_energy = np.sqrt(taille_carte)/15 #Energie solaire par pas de temps, sert a faire pousser les plantes
 gain_max_energy_per_turn = 0.1 #max gain of energy per turn for a plant
 print(f"BB_PLANTE tous les : {np.ceil(energy_plant_bb/(solar_energy/nbr_plantes_init)/2)} turns pour NBR_PLANT = {nbr_plantes_init}")
 print(f"Min duration to create BB_PLANT : {np.ceil(energy_plant_bb/gain_max_energy_per_turn/2)} turns")
 #paramètres individus
-age_maximum = 5000
+age_maximum = 8000
 # Les individus commeneent avec une énergie/2 et une vie de 100
 max_energie_individu_init = 150 
 max_vie_individu_init = 200 
@@ -124,6 +124,12 @@ facteur_slowed_down = 0.2 # facteur slowed down multiplicatif vitesse & angle. 1
 #moving
 facteur_multiplicatif_perte_vie = 0.02 #plus on augmente, plus ils perdent de la vie. 0.01 marche bien
 facteur_multiplicatif_deplacement_init = 2/size_modification #SIZE MODIFCATION
+#Metabolisme de base: cout energetique PAR TICK de simplement exister, proportionnel a la taille.
+#Sans lui, rester immobile est GRATUIT: aucune pression a chercher de la nourriture ni a etre efficace.
+#Reference: se deplacer a pleine vitesse coute 0.04/tick a la taille initiale. Mettre 0 pour desactiver.
+#ATTENTION: la capacite de charge du monde vaut solar_energy / cout_par_individu -> augmenter ce cout
+#SANS augmenter solar_energy reduit la population d'equilibre.
+facteur_metabolisme_basal = 0.005
 #hit box
 r_collision_box_individu_init = 2/size_modification #range to collide with other individuals. Cannot mute, just depends on the size of the individual. C'est ce qui permet d'infliger +/- de dégats #SIZE MODIFCATION
 r_eat_box_individu_init = r_collision_box_individu_init * 3 #range to eat
@@ -133,7 +139,7 @@ r_hit_box_eatable_init = 1 #size of the plant. Peut avoir des tailles différent
 
 #vision
 vision_rayon_init = 400/size_modification #ATTENTION : il faut que ce soit supérieur à (r_hit_box_individu+r_hit_box_plante) #SIZE MODIFCATION
-vision_demi_angle_init = 20 #degrés
+vision_demi_angle_init = 10 #degrés
 max_rotation_init = 20 #degrés du demi angle
 
 #bruit
@@ -241,7 +247,7 @@ proba_remplacer_biais_init = 0.05
 proba_creer_poid_init = 0.45
 proba_ajouter_neurone_init = 0.07
 proba_supprimer_neurone_init = 0.07
-proba_supprimer_poid_init = 0.05
+proba_supprimer_poid_init = 0.05 #was 0.05
 proba_supprimer_biais_init = 0.05
 #meta proba
 nbr_modifications_proba = 5 #every probas mutation are equiprobable

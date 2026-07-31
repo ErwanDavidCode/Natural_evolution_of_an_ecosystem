@@ -497,6 +497,13 @@ class Body:
             selected_method()
 
 
+    def basal_metabolism(self):
+        """Coût énergétique par tick de simplement rester en vie, proportionnel à la taille.
+        Prélevé sur le fuel AVANT le test de famine, indépendamment de toute action: sans lui
+        l'immobilité est gratuite et rien ne pousse à chercher de la nourriture."""
+        self.energie -= facteur_metabolisme_basal * (self.r_collision_box_individu / r_collision_box_individu_init)
+
+
     def move(self, sortie_brain):
         """déplacement du corps
         Ne vérifie pas les sorties de la carte"""
