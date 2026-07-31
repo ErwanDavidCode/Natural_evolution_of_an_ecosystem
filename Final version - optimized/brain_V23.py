@@ -197,9 +197,14 @@ class Brain:
     def update_know_something(self, vision_nbr_parts, nbr_neurones_par_part, nbr_neurones_entrees_supplementaires, augmentation=1, position=0):
         """Ajoute ou retire des entrées au cerveau au tout début : neurones supplémentaires.
         This function is called once we add the "know_size" feature neuron at the entrance net (not when we add a new "vision part" -> this is the purpose of an other function)"""
+        # Décalage du bloc "know_*" dans une part de vision: il vient après distance(1) + type de l'entité.
+        # Le body PREPEND la nouvelle entrée (body.add_know_something), donc le cerveau doit insérer/supprimer
+        # au DEBUT de ce bloc, pas à la fin de la part, sinon les poids ne correspondent plus aux valeurs lues.
+        offset_know = nbr_neurones_par_part_classe + 1
+
         if augmentation > 0:  # Ajouter des neurones supplémentaires
             # Ajouter des lignes et des colonnes dans matrice_poids
-            indices = [nbr_neurones_entrees_supplementaires + (i + 1) * nbr_neurones_par_part for i in range(vision_nbr_parts)]
+            indices = [nbr_neurones_entrees_supplementaires + i * nbr_neurones_par_part + offset_know for i in range(vision_nbr_parts)]
             for indice in reversed(indices):
                 # Ajouter des lignes et des colonnes dans matrice_poids
                 for _ in range(augmentation):
@@ -215,9 +220,9 @@ class Brain:
                 self.connect_entry_to_hidden(indice, indice + augmentation - 1)
 
 
-        elif augmentation < 0:  # Ajouter des neurones supplémentaires
-            # Ajouter des lignes et des colonnes dans matrice_poids
-            indices = [nbr_neurones_entrees_supplementaires + (i + 1) * nbr_neurones_par_part -1 - position * augmentation for i in range(vision_nbr_parts)]
+        elif augmentation < 0:  # Retirer des neurones supplémentaires
+            # 'position' est l'index du neurone retiré DANS le bloc know_* (ordre du dict du body)
+            indices = [nbr_neurones_entrees_supplementaires + i * nbr_neurones_par_part + offset_know + position for i in range(vision_nbr_parts)]
             for indice in reversed(indices):
                 # Supprimer des lignes et des colonnes dans matrice_poids
                 for _ in range(-augmentation):
