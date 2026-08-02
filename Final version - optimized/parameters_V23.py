@@ -2,10 +2,8 @@ import numpy as np
 import random
 import time
 
-import functions_V23 as functions
 
-
-# Pour que ca marche il faut l'arborescence de fichier : 
+# Pour que ca marche il faut l'arborescence de fichier :
 # Un fichier "on s'en fout du nom" dans lequel il y a un dossier "data" et un dossier "Roboto" (police d'écriture pour les ID) et nos .py
 # Un fichier "Videos" dans lequel seront sauvegardées les vidéos
 
@@ -212,8 +210,11 @@ nbr_neurones_entrees_supplementaires_par_part_init = sum(liste_entrees_supplemen
 nbr_neurones_sorties_supplementaires_init = sum(liste_sorties_supplementaires_init.values())
 
 nbr_classes = len(classes)
-nbr_neurones_par_part_classe = functions.neurones_par_part_vision(nbr_classes)
-nbr_neurones_par_part_init = nbr_neurones_par_part_classe + 1 + nbr_neurones_entrees_supplementaires_par_part_init #+1 car on ajoute la distance
+#VISION: une part de vision porte UNE DISTANCE PAR CLASSE d'entité (et non plus une distance
+#unique + un code de type). Sans ca, seule l'entité la plus proche de la part était perçue: une
+#plante proche MASQUAIT l'individu derrière elle, et la prédation devenait impossible.
+nbr_neurones_par_part_classe = nbr_classes
+nbr_neurones_par_part_init = nbr_neurones_par_part_classe + nbr_neurones_entrees_supplementaires_par_part_init
 
 
 nbr_entrees_init = vision_nbr_parts_init*nbr_neurones_par_part_init + nbr_neurones_entrees_supplementaires_init #entree

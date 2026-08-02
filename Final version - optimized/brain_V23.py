@@ -197,10 +197,10 @@ class Brain:
     def update_know_something(self, vision_nbr_parts, nbr_neurones_par_part, nbr_neurones_entrees_supplementaires, augmentation=1, position=0):
         """Ajoute ou retire des entrées au cerveau au tout début : neurones supplémentaires.
         This function is called once we add the "know_size" feature neuron at the entrance net (not when we add a new "vision part" -> this is the purpose of an other function)"""
-        # Décalage du bloc "know_*" dans une part de vision: il vient après distance(1) + type de l'entité.
+        # Décalage du bloc "know_*" dans une part de vision: il vient après les distances par classe.
         # Le body PREPEND la nouvelle entrée (body.add_know_something), donc le cerveau doit insérer/supprimer
         # au DEBUT de ce bloc, pas à la fin de la part, sinon les poids ne correspondent plus aux valeurs lues.
-        offset_know = nbr_neurones_par_part_classe + 1
+        offset_know = nbr_neurones_par_part_classe
 
         if augmentation > 0:  # Ajouter des neurones supplémentaires
             # Ajouter des lignes et des colonnes dans matrice_poids

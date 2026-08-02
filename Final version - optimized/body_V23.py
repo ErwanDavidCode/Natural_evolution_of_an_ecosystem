@@ -635,8 +635,11 @@ class Body:
         #vision = - np.ones(nbr_entrees) # Vaut -1 par défaut (normalisation entre -1 et +1) +neurones_supplementaires pour ma classe par exemple
         vision = np.zeros(nbr_entrees) # Vaut 0 par défaut (normalisation entre 0 et +1) +neurones_supplementaires pour ma classe par exemple
         
-        # Initialisation des distances minimales
-        min_distances = np.full(self.vision_nbr_parts, np.inf)
+        # Distance minimale PAR CLASSE d'entité et par part: une plante proche ne masque plus
+        # l'individu derrière elle. min_distances_overall sert au bloc "know_*", qui décrit
+        # (comme avant) l'entité la plus proche de la part, toutes classes confondues.
+        min_distances = np.full((self.vision_nbr_parts, nbr_classes), np.inf)
+        min_distances_overall = np.full(self.vision_nbr_parts, np.inf)
         
         # Calcul des angles des bords des parts de camembert
         angles_parts = np.linspace(self.teta - self.vision_demi_angle, self.teta + self.vision_demi_angle, self.vision_nbr_parts + 1) % 360 # On compte dans le sens trigo les angles et en degrés dans un repere y vers le haut classique
@@ -692,32 +695,27 @@ class Body:
         # get the visible entities
         for entity, distance, angle in list_visible_entity:
             part_index = self.determine_part_index(angle, angles_parts)
+            if part_index == -1:
+                continue
+            entity_type = entity[1]
+            entity_classe = classes[entity_type]
 
-            # Type numétirique (Pas de One hot encoding de l'entité
-            if part_index != -1 and distance < min_distances[part_index]:
-                entity_type = entity[1]
-                min_distances[part_index] = distance
+            base_index = self.nbr_neurones_entrees_supplementaires + part_index * self.nbr_neurones_par_part
 
-                # Distance normalisée pour la vision
+            # Une distance par classe: on ne garde que la plus proche DE CETTE CLASSE dans cette part
+            if distance < min_distances[part_index][entity_classe]:
+                min_distances[part_index][entity_classe] = distance
                 #dist_value = 2*(self.vision_rayon - distance)/self.vision_rayon - 1 # Normalisation dans [-1, 1] : part lin fontion tanh
                 dist_value = (self.vision_rayon - distance)/self.vision_rayon  # Normalisation dans [0, 1]
-                base_index = self.nbr_neurones_entrees_supplementaires + part_index * self.nbr_neurones_par_part
-                vision[base_index] = dist_value
-                # Binary encoding of the entity classe
-                # entity_classe = classes[entity_type]
-                # binary_encoding = functions.classe_to_binary(entity_classe, nbr_classes)
-                # for i, bit in enumerate(binary_encoding):
-                #     vision[self.nbr_neurones_entrees_supplementaires + part_index * self.nbr_neurones_par_part + i + 1] = bit 
-                
-                # Type en coins du carré (2 neurones), rien = (0,0)
-                tx, ty = functions.entity_type_to_square2(entity_type)
-                vision[base_index + 1] = tx # 1 et 2 fixe car on a que 2 neurones pour indiquer le type d'entité aujourd'hui
-                vision[base_index + 2] = ty
+                vision[base_index + entity_classe] = dist_value
 
+            # Le bloc "know_*" décrit l'entité la plus proche de la part, toutes classes confondues
+            if distance < min_distances_overall[part_index]:
+                min_distances_overall[part_index] = distance
 
                 # If it has additional input to describe the entitie it sees
                 if self.liste_entrees_supplementaires_par_part:
-                    offset = 3  # après distance(1) + type(2)
+                    offset = nbr_neurones_par_part_classe  # après les distances par classe
                     index_vision = 0
                     for neurone, nbr_neurones_correspondant in self.liste_entrees_supplementaires_par_part.items():
                         if neurone == "know_size":
@@ -732,7 +730,7 @@ class Body:
                         elif neurone == "know_age":
                             age_value = age_normalizer(entity[0].body.age if entity_type == "individual" else entity[0].age, age_maximum)
                             vision[base_index + offset + index_vision] = age_value
-                        
+
                         index_vision += nbr_neurones_correspondant
 
                 # # If has the capability to know the size of the individual in front of him
