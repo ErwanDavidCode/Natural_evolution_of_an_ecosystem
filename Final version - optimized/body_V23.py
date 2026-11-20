@@ -534,7 +534,11 @@ class Body:
         nvl_position_x = position_x + deplacement_x
         nvl_position_y = position_y + deplacement_y
         # perte de la vie en fonction du deplacement: ca correspond à sa faim/soif
-        self.energie -= np.abs(deplacement * facteur_multiplicatif_perte_vie * move_energy_linear(self.r_collision_box_individu/r_collision_box_individu_init)) #plus l'individu est gros plus il perd de l'energie. /r_collision_box_individu_init pour que ce soit un facteur 1 au départ. move_energy renvoit 1 en 1
+        # Cout SUR-LINEAIRE (trainee): on paie (deplacement/vitesse_reference)^exposant * vitesse_reference.
+        # Normalise en vitesse_reference => cout inchange a vitesse typique, mais aller 2x plus vite
+        # coute plus de 2x. Sans ca la vitesse derive sans limite (gain et cout tous deux lineaires).
+        cout_deplacement = vitesse_reference * (abs(deplacement) / vitesse_reference) ** exposant_cout_deplacement
+        self.energie -= cout_deplacement * facteur_multiplicatif_perte_vie * move_energy_linear(self.r_collision_box_individu/r_collision_box_individu_init) #plus l'individu est gros plus il perd de l'energie. /r_collision_box_individu_init pour que ce soit un facteur 1 au départ. move_energy renvoit 1 en 1
 
         return [nvl_position_x, nvl_position_y, deplacement]
 

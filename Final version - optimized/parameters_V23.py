@@ -34,7 +34,7 @@ load_population = None                                                          
 
 
 #PARAMETRES
-time_to_save_video = 100000 #Si le temps attend cette valeur, on sauvegarde la vidéo et l'historique dans un fichier avec un nom unique. BUT : avoir une save des vidéos et historiques intéressants
+time_to_save_video = 150000 #Si le temps attend cette valeur, on sauvegarde la vidéo et l'historique dans un fichier avec un nom unique. BUT : avoir une save des vidéos et historiques intéressants
 duree_simulation = 20000000 #Can do a Ctrl+C to stop the simulation and still have the video and the history of individuals
 end_time = time.strptime("24 Jun 2024 14:30:00", "%d %b %Y %H:%M:%S") #lancer la simulation jusquà ce temps
 pas_de_temps = 1
@@ -81,7 +81,7 @@ range_decomposition = 5 #rayon (unités carte) autour du perissable mort dans le
 #Attention, en plus des plant min, une seed de plante apparait tous les 2000 itérations
 
 #Energie
-solar_energy = np.sqrt(taille_carte)/15 #Energie solaire par pas de temps, sert a faire pousser les plantes
+solar_energy = np.sqrt(taille_carte)/10 #Energie solaire par pas de temps, sert a faire pousser les plantes
 gain_max_energy_per_turn = 0.1 #max gain of energy per turn for a plant
 print(f"BB_PLANTE tous les : {np.ceil(energy_plant_bb/(solar_energy/nbr_plantes_init)/2)} turns pour NBR_PLANT = {nbr_plantes_init}")
 print(f"Min duration to create BB_PLANT : {np.ceil(energy_plant_bb/gain_max_energy_per_turn/2)} turns")
@@ -128,6 +128,15 @@ facteur_multiplicatif_deplacement_init = 2/size_modification #SIZE MODIFCATION
 #ATTENTION: la capacite de charge du monde vaut solar_energy / cout_par_individu -> augmenter ce cout
 #SANS augmenter solar_energy reduit la population d'equilibre.
 facteur_metabolisme_basal = 0.005
+#TRAINEE: exposant du cout de deplacement. Cout par tick ~ (distance parcourue)^exposant.
+#A 1.0 le cout est LINEAIRE en vitesse: la nourriture trouvee par tick l'est aussi, les deux
+#s'annulent et AUCUNE vitesse n'est optimale -> la vitesse derive sans limite (observe: 5x l'initiale,
+#jusqu'a 12x dans le morphospace) et toute la population paie la facture. Au-dessus de 1.0 il existe
+#une vitesse optimale finie. 2.0 = trainee physique, beaucoup trop severe ici. 1.0 = ancien comportement.
+#vitesse_reference sert a normaliser: le cout est INCHANGE pour un deplacement de cette taille,
+#donc changer l'exposant ne modifie pas le cout de l'individu moyen initial (pas de recalibrage).
+exposant_cout_deplacement = 1.2
+vitesse_reference = 0.5 * facteur_multiplicatif_deplacement_init * pas_de_temps #deplacement typique d'un individu initial
 #hit box
 r_collision_box_individu_init = 2/size_modification #range to collide with other individuals. Cannot mute, just depends on the size of the individual. C'est ce qui permet d'infliger +/- de dégats #SIZE MODIFCATION
 r_eat_box_individu_init = r_collision_box_individu_init * 3 #range to eat
